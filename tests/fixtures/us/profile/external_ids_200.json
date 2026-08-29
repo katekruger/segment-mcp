@@ -1,0 +1,10 @@
+{
+  "status_code": 200,
+  "headers": { "Content-Type": "application/json" },
+  "body": {
+    "external_ids": [
+      { "id": "jane@example.com", "type": "email", "collection": "users", "encoding": "none" }
+    ],
+    "cursor": { "url": null, "has_more": false, "next": null, "limit": 25 }
+  }
+}

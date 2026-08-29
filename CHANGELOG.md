@@ -9,6 +9,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `modes.py`: the `SEGMENT_MCP_MODE` (`read`/`write`/`admin`) tier model
+  from BUILD-PLAN.md §6 — `authorize()` decides whether an action at a
+  given tier may run under the current mode, with an echo-confirmation
+  gate for Tier 3 and a *typed*, resource-naming confirmation gate for
+  Tier 2/4. Tier 1 raises `Tier1UnreachableError` unconditionally, before
+  even checking the mode. Reuses the risk-tier/hard-block/confirm-gate
+  *pattern* already proven in `instantly-mcp`'s autonomy tiers,
+  reimplemented natively (no dependency on that project) under this
+  project's own vocabulary.
+- `client/public_api.py`: `Tier1BlockedError` — the client independently
+  refuses any mutating request to `/regulations*`, before it reaches the
+  network, regardless of what calls it or what mode is active.
+- `tests/test_tier1_unreachable.py`: proves Tier 1 is unreachable three
+  independent ways (modes.py, the client, and tool introspection),
+  deliberately redundantly — see BUILD-PLAN.md §6.
+- `docs/what-this-refuses-to-do.md`: the differentiating document — Tier 1
+  and why, the `PUT`-replaces-all trap on tracking-plan rules and source
+  labels (with the full-set-diff requirement any future v0.3 tool must
+  implement), and why Tracking API writes are never exposed, including an
+  honest note that both existing community Segment MCP servers lead with
+  exactly that write path.
+- `client/profile_api.py`: the Profile API client — a separate trust tier.
+  HTTP Basic auth with the access token as username and a blank password;
+  lookup values are lowercased at the client boundary with a logged
+  warning when normalization changed something (wrong case returns an
+  empty result from Segment, not an error); every lookup is logged
+  (collection, normalized key, route, caller) before the request is sent.
+  Constructed only with a separate `SEGMENT_PROFILE_TOKEN` +
+  `SEGMENT_PROFILE_SPACE_ID` — no profile-lookup tool is wired into
+  `server.py` yet (that's v0.2 tool-surface work); this is the trust
+  boundary a future tool will be built on.
+- README.md: Modes and Profile API sections; `.env.example`:
+  `SEGMENT_PROFILE_SPACE_ID`.
+
 - The five v0.1 composed tools (BUILD-PLAN.md §5), registered in
   `server.py` with `readOnlyHint: true` / `destructiveHint: false`
   explicit on all five (the MCP spec defaults `destructiveHint` to

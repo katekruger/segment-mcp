@@ -1,0 +1,15 @@
+{
+  "status_code": 200,
+  "headers": { "Content-Type": "application/json" },
+  "body": {
+    "data": {
+      "sources": [{ "id": "src_3", "slug": "server", "name": "Server", "enabled": false }],
+      "pagination": {
+        "current": "Mg==",
+        "next": null,
+        "previous": "MA==",
+        "totalEntries": 3
+      }
+    }
+  }
+}

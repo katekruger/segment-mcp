@@ -1,0 +1,9 @@
+{
+  "status_code": 200,
+  "headers": { "Content-Type": "application/json" },
+  "body": {
+    "data": {
+      "source": { "id": "src_2", "slug": "legacy-crm", "name": "Legacy CRM", "enabled": true }
+    }
+  }
+}

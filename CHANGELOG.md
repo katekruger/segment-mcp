@@ -9,6 +9,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The five v0.1 composed tools (BUILD-PLAN.md §5), registered in
+  `server.py` with `readOnlyHint: true` / `destructiveHint: false`
+  explicit on all five (the MCP spec defaults `destructiveHint` to
+  `true`):
+  - `audit_event_routing` — sources → connected destinations → settings →
+    subscriptions, one routing report. Degrades gracefully (not an error)
+    when destination Subscriptions is unavailable — confirmed Alpha,
+    workspace-enablement-gated.
+  - `trace_event` — given an event name: tracking-plan coverage (an event
+    in no plan is reported as "governed by nothing", not an empty
+    result), confirmed emitting sources via `GET /events/volume`, and
+    connected destinations/warehouses for a bounded set of sources.
+  - `find_stale_sources` — a source with zero activity in the entire
+    queried window is `insufficient_data`, not `stale`: the Public API
+    exposes no source creation date, so this tool can't tell "new" from
+    "dead" and says so rather than guessing.
+  - `check_delivery_health` — a requested window wider than what the
+    endpoint allows is capped, not silently narrowed.
+  - `find_ungoverned_sources` — cross-references tracking-plan coverage
+    against `sources/{id}/settings.track.allowUnplannedEvents`, so
+    "governed but still allowing unplanned events" is its own category,
+    not lumped in with "fully governed".
+  - `client/public_api.py`: `get_data()` (unwraps Segment's `data`
+    envelope) and `paginate()` (cursor pagination via
+    `pagination.count`/`pagination.cursor`), both verified against
+    docs.segmentapis.com.
+  - `tools/_shared.py`: resource-fetch helpers (`list_sources_scoped`,
+    `list_tracking_plans`, `event_volume_by_source`) shared across tools,
+    plus the `ScopedList`/`Gap` shapes every tool uses to report
+    truncation and graceful degradation consistently.
+
+### Fixed
+
+- Three Prompt 1 fixtures (`workspaces_200.json` both regions,
+  `source_no_connected_destinations_200.json`,
+  `tracking_plan_no_sources_200.json`) were missing Segment's `data`
+  response envelope — confirmed against docs.segmentapis.com during this
+  prompt's research, unverified when they were written. Corrected in
+  place; the two client tests that asserted on the old shape now go
+  through `get_data()`.
+
+### Known discrepancy from BUILD-PLAN.md
+
+- §5 describes `check_delivery_health`'s window as "30-DAY WINDOW MAX".
+  The live docs (docs.segmentapis.com, Destinations tag) show tighter,
+  granularity-specific limits instead: MINUTE allows at most a 4-hour
+  range with data no older than 48 hours; HOUR allows 7 days with data no
+  older than 7 days; DAY allows 14 days with data no older than 14 days —
+  none of which is 30 days. Implemented against the verified API rather
+  than the plan text; see `tools/health.py`'s module docstring.
+
 - Project scaffolding: `src/` layout, package skeleton, CI, and repo hygiene
   files, per `BUILD-PLAN.md`.
 - ADR 0002: Tier 1 (`POST /regulations` and its per-source sibling) is

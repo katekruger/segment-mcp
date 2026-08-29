@@ -1,0 +1,9 @@
+{
+  "status_code": 200,
+  "headers": { "Content-Type": "application/json" },
+  "body": {
+    "data": {
+      "source": { "id": "src_1", "slug": "web-app", "name": "Web App", "enabled": true }
+    }
+  }
+}

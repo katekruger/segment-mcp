@@ -18,7 +18,7 @@ from segment_mcp.client.public_api import (
     SegmentTierError,
 )
 from segment_mcp.client.regions import Region, RegionMismatchError
-from tests.fixtures.http import mock_transport
+from tests.fixtures.http import load_fixture, mock_transport, response_from_fixture
 
 
 def make_client(*fixture_paths: str, region: Region = Region.US) -> SegmentPublicAPIClient:
@@ -158,20 +158,77 @@ async def test_valid_json_that_is_not_an_object_is_also_malformed() -> None:
 
 
 # --------------------------------------------------------------------------
+# get_data() — the `data` envelope every Public API response uses
+# --------------------------------------------------------------------------
+
+
+async def test_get_data_unwraps_the_data_envelope() -> None:
+    async with make_client("us/workspaces_200.json") as client:
+        data = await client.get_data("/workspaces")
+    assert data["workspace"]["id"] == "ws_fake0000000000000000"
+
+
+async def test_get_data_raises_when_envelope_is_missing() -> None:
+    async with make_client("us/no_data_envelope_200.json") as client:
+        with pytest.raises(SegmentMalformedResponseError, match="no 'data' object"):
+            await client.get_data("/sources")
+
+
+# --------------------------------------------------------------------------
+# paginate() — cursor pagination
+# --------------------------------------------------------------------------
+
+
+async def test_paginate_follows_cursor_until_next_is_null() -> None:
+    async with make_client("us/sources_page1_200.json", "us/sources_page2_200.json") as client:
+        items, truncated = await client.paginate("/sources", items_key="sources")
+    assert [item["id"] for item in items] == ["src_1", "src_2", "src_3"]
+    assert truncated is False
+
+
+async def test_paginate_reports_truncation_at_max_pages() -> None:
+    async with make_client("us/sources_page1_200.json", "us/sources_page2_200.json") as client:
+        items, truncated = await client.paginate("/sources", items_key="sources", max_pages=1)
+    assert [item["id"] for item in items] == ["src_1", "src_2"]
+    assert truncated is True
+
+
+async def test_paginate_sends_cursor_from_previous_page() -> None:
+    transport_calls: list[httpx.Request] = []
+    fixtures = [
+        load_fixture("us/sources_page1_200.json"),
+        load_fixture("us/sources_page2_200.json"),
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        transport_calls.append(request)
+        index = min(len(transport_calls) - 1, len(fixtures) - 1)
+        return response_from_fixture(fixtures[index])
+
+    async with SegmentPublicAPIClient(
+        "tok", Region.US, transport=httpx.MockTransport(handler)
+    ) as client:
+        await client.paginate("/sources", items_key="sources")
+
+    assert "pagination.cursor" not in str(transport_calls[0].url)
+    assert "pagination.cursor=Mg%3D%3D" in str(transport_calls[1].url)
+
+
+# --------------------------------------------------------------------------
 # Composed-tool-shaped fixtures (used again once Prompt 2 wires the tools)
 # --------------------------------------------------------------------------
 
 
 async def test_source_with_no_connected_destinations_parses_to_empty_list() -> None:
     async with make_client("us/source_no_connected_destinations_200.json") as client:
-        body = await client.get("/sources/src_1/connected-destinations")
-    assert body["destinations"] == []
+        data = await client.get_data("/sources/src_1/connected-destinations")
+    assert data["destinations"] == []
 
 
 async def test_tracking_plan_with_no_sources_parses_to_empty_list() -> None:
     async with make_client("us/tracking_plan_no_sources_200.json") as client:
-        body = await client.get("/tracking-plans/tp_1/sources")
-    assert body["data"] == []
+        data = await client.get_data("/tracking-plans/tp_1/sources")
+    assert data["sources"] == []
 
 
 # --------------------------------------------------------------------------

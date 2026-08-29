@@ -1,0 +1,30 @@
+{
+  "status_code": 200,
+  "headers": { "Content-Type": "application/json" },
+  "body": {
+    "data": {
+      "sourceId": "src_2",
+      "settings": {
+        "track": {
+          "allowUnplannedEvents": false,
+          "allowUnplannedEventProperties": false,
+          "allowEventOnViolations": false,
+          "allowPropertiesOnViolations": false,
+          "commonEventOnViolations": "BLOCK"
+        },
+        "group": {
+          "allowTraitsOnViolations": false,
+          "allowUnplannedTraits": false,
+          "commonEventOnViolations": "BLOCK"
+        },
+        "identify": {
+          "allowTraitsOnViolations": false,
+          "allowUnplannedTraits": false,
+          "commonEventOnViolations": "BLOCK"
+        },
+        "forwardingBlockedEventsTo": "",
+        "forwardingViolationsTo": ""
+      }
+    }
+  }
+}

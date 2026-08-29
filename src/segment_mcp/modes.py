@@ -111,6 +111,18 @@ _TIER_REQUIRES_MODE: dict[Tier, frozenset[Mode]] = {
 }
 
 
+def is_tier_reachable(tier: Tier, mode: Mode) -> bool:
+    """Whether `tier` is reachable at all under `mode` — membership only,
+    no confirmation semantics. For `server.py` deciding which tools to
+    *register* in the first place: a tool that isn't reachable in the
+    current mode shouldn't appear in `list_tools()` at all, not appear
+    and then reject every call. `Tier.TIER1` is never reachable,
+    regardless of mode."""
+    if tier is Tier.TIER1:
+        return False
+    return mode in _TIER_REQUIRES_MODE[tier]
+
+
 class Tier1UnreachableError(RuntimeError):
     """Raised by `authorize()` for any Tier 1 action, unconditionally.
 

@@ -9,6 +9,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `server.py`: fatal startup checks (`run_startup_checks()`) — region set
+  and valid, token present and actually authenticating, workspace tier
+  supports the Public API (a Free-tier 403 surfaces as a clear message,
+  not a raw error) — all before the server accepts a single tool call.
+  `[project.scripts]` now provides a real `segment-mcp` entry point
+  (`uv run segment-mcp`).
+- `server.py`: `register_tools()` registers only the tools the current
+  `SEGMENT_MCP_MODE` reaches, via `modes.is_tier_reachable()`. Every v0.1
+  tool is `Tier.READ` so nothing is filtered out yet, but the mechanism
+  is real and tested with fabricated Tier 2/3 specs, not deferred until
+  the first write tool needs it.
+- `server.py`: the three-tier model is now in the server's MCP
+  `instructions` (current mode, what each tier requires, Tier 1's
+  permanent refusal) — visible to a connecting client, not just
+  documented in README.md.
+- `.github/workflows/release.yml`: tag-triggered release, parsedmarc
+  pattern — verifies the tag matches the package version and that
+  `CHANGELOG.md` has a section for it, runs the full CI suite, builds,
+  publishes to PyPI via Trusted Publishing (OIDC, no API token secret
+  anywhere) into a `release` environment requiring manual approval
+  (PEP 740 attestations come free under Trusted Publishing), then creates
+  the GitHub Release from that CHANGELOG section.
+- README.md rewritten to BUILD-PLAN.md's specified order: badges, one
+  line, read-only-by-default above the fold, the Tier 1 refusal stated
+  plainly, quick start, the five tools framed as questions, prerequisites,
+  region configuration with the EU silent-failure warning, and a link to
+  `docs/what-this-refuses-to-do.md` — before any of the Modes/Profile
+  API/development detail that follows.
+
 - `modes.py`: the `SEGMENT_MCP_MODE` (`read`/`write`/`admin`) tier model
   from BUILD-PLAN.md §6 — `authorize()` decides whether an action at a
   given tier may run under the current mode, with an echo-confirmation

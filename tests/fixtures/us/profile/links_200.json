@@ -1,0 +1,8 @@
+{
+  "status_code": 200,
+  "headers": { "Content-Type": "application/json" },
+  "body": {
+    "links": [{ "id_type": "email", "id_value": "jane@example.com" }],
+    "cursor": { "url": null, "has_more": false, "next": null, "limit": 20 }
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "status_code": 429,
+  "headers": { "Content-Type": "application/json", "Retry-After": "2" },
+  "body": { "message": "Too many requests" }
+}

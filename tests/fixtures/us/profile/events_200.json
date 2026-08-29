@@ -1,0 +1,10 @@
+{
+  "status_code": 200,
+  "headers": { "Content-Type": "application/json" },
+  "body": {
+    "events": [
+      { "type": "track", "event": "Order Completed", "timestamp": "2026-08-20T00:00:00Z" }
+    ],
+    "cursor": { "url": null, "has_more": false, "next": null, "limit": 25 }
+  }
+}

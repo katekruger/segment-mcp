@@ -37,6 +37,15 @@ from segment_mcp.client.regions import (
 # enabled, used as the "is this token valid for this region" self-check.
 _SELF_CHECK_PATH = "/workspaces"
 
+# Tier 1 (BUILD-PLAN.md §6, docs/decisions/0002-tier-1-permanently-unreachable.md):
+# workspace-scoped, permanent, irreversible data deletion. This client
+# refuses to send a mutating request here regardless of what calls it —
+# independent of modes.py's own refusal (belt and braces; see
+# tests/test_tier1_unreachable.py). GET stays open: the reads
+# (GET /regulations, GET /regulations/{id}, GET /suppressions) are in
+# scope for v0.2 and are not what this guards against.
+_TIER1_BLOCKED_PATH_PREFIX = "/regulations"
+
 # Floor applied only when a 429 carries no Retry-After header and no
 # data.msBeforeNext — i.e. genuinely no timing signal. Not a guess at
 # Segment's unpublished global rate limit; see BUILD-PLAN.md §4.
@@ -114,6 +123,39 @@ class SegmentRateLimitError(SegmentAPIError):
 
 class SegmentMalformedResponseError(SegmentAPIError):
     """The response body was not valid JSON, or wasn't a JSON object."""
+
+
+class Tier1BlockedError(SegmentAPIError):
+    """Refused before sending: a mutating request to `/regulations*`.
+
+    This client never sends this request over the network — it's rejected
+    client-side, before auth, before rate limiting, before anything else.
+    See `docs/decisions/0002-tier-1-permanently-unreachable.md` and
+    `modes.py`'s independent refusal of the same tier.
+    """
+
+
+# --------------------------------------------------------------------------
+# Tier 1 refusal — see Tier1BlockedError
+# --------------------------------------------------------------------------
+
+
+def _refuse_if_tier1_mutation(method: str, path: str) -> None:
+    """Raise before a single byte goes over the network if this is a
+    mutating (non-GET) call anywhere under `/regulations`."""
+    if method.upper() == "GET":
+        return
+    normalized_path = path.split("?", 1)[0]
+    if normalized_path == _TIER1_BLOCKED_PATH_PREFIX or normalized_path.startswith(
+        _TIER1_BLOCKED_PATH_PREFIX + "/"
+    ):
+        raise Tier1BlockedError(
+            f"Refused: {method.upper()} {path} is a Tier 1 action "
+            "(regulation/deletion creation) and is permanently unreachable "
+            "through this client, in every mode. See "
+            "docs/decisions/0002-tier-1-permanently-unreachable.md.",
+            status_code=None,
+        )
 
 
 # --------------------------------------------------------------------------
@@ -337,6 +379,7 @@ class SegmentPublicAPIClient:
         params: dict[str, Any] | None = None,
         json_body: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        _refuse_if_tier1_mutation(method, path)
         await self._limiter.wait_if_needed(method, path)
         response = await self._client.request(method, path, params=params, json=json_body)
 

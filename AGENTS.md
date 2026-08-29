@@ -38,18 +38,31 @@ This repo has conventions. Violating them wastes a review cycle.
    `POST /regulations/sources/{id}` permanently destroy user data with no
    undo. They must not be callable in ANY mode. This is a line, not a v3
    feature waiting for the right gate. See
-   `docs/decisions/0002-tier-1-permanently-unreachable.md`.
-3. **NEVER auto-generate tools from the OpenAPI spec.** It would produce
+   `docs/decisions/0002-tier-1-permanently-unreachable.md` and
+   `docs/what-this-refuses-to-do.md`. `tests/test_tier1_unreachable.py`
+   must keep passing, deliberately redundantly (modes.py, the client, and
+   tool introspection each refuse it independently) — never simplify that
+   test down to one check.
+3. **`PUT`-replace endpoints (`tracking-plans/{id}/rules`,
+   `sources/{id}/labels`) are not exposed before v0.3, and only then with
+   the full-set-diff requirement in `docs/what-this-refuses-to-do.md`
+   implemented, not skipped as scope creep.**
+4. **NEVER auto-generate tools from the OpenAPI spec.** It would produce
    ~200 flat tools including every `DELETE`, with no notion of blast
    radius. Hand-pick and COMPOSE.
-4. **Compose reads into QUESTIONS, not endpoints.** The value is the join.
+5. **Compose reads into QUESTIONS, not endpoints.** The value is the join.
    An LLM chaining four endpoint calls per source hits rate limits and
    loses the thread. See BUILD-PLAN.md §5.
-5. **Resolve region EXPLICITLY on every call. Never default.** An EU
+6. **Resolve region EXPLICITLY on every call. Never default.** An EU
    workspace hitting the wrong base URL fails silently — no error, data
    simply never appears or never arrives. See BUILD-PLAN.md §0.6.
-6. **No live API calls in tests.** Recorded fixtures only, under
+7. **No live API calls in tests.** Recorded fixtures only, under
    `tests/fixtures/{us,eu}/`.
+8. **The Profile API is a separate trust tier.** Never construct
+   `ProfileAPIClient` implicitly or fall back to `SEGMENT_API_TOKEN` for
+   it. A profile-lookup tool must not be registered when
+   `SEGMENT_PROFILE_TOKEN` is unset, and every lookup must be logged. See
+   `client/profile_api.py` and README.md's Profile API section.
 
 ## Before opening a PR
 

@@ -1,0 +1,3 @@
+# zizmor GitHub Actions security linter config.
+# https://woodruffw.github.io/zizmor/configuration/
+rules: {}

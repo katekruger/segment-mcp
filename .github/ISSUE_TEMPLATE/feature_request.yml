@@ -1,0 +1,29 @@
+name: Feature request
+description: Propose something new — a tool, a composed question, a capability.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: What can't you answer today that this would enable? Prefer a concrete workspace scenario over an abstract capability.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed approach
+      description: If you have one. It's fine to leave this blank and just describe the problem.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I checked BUILD-PLAN.md to see if this is already scoped for a future version, deferred, or explicitly a non-goal.
+          required: true
+        - label: This is not a request to expose Tier 1 (regulation/deletion creation) — see docs/decisions/0002-tier-1-permanently-unreachable.md. Requests to relax that line will be closed.
+          required: true

@@ -1,0 +1,55 @@
+name: Bug report
+description: Something is broken or behaving incorrectly.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug, including what you expected instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: Minimal steps to reproduce, including your `SEGMENT_MCP_MODE` and `SEGMENT_REGION` (redact your token).
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: segment-mcp version
+      placeholder: e.g. 0.1.0
+    validations:
+      required: true
+
+  - type: input
+    id: python-version
+    attributes:
+      label: Python version
+      placeholder: e.g. 3.12.4
+    validations:
+      required: true
+
+  - type: dropdown
+    id: region
+    attributes:
+      label: Workspace region
+      options:
+        - US
+        - EU
+        - Not sure / not applicable
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant output / traceback
+      description: This will be rendered as a code block — do not paste your API token or any real Segment workspace data.
+      render: shell
+    validations:
+      required: false

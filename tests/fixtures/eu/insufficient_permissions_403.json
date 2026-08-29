@@ -1,0 +1,7 @@
+{
+  "status_code": 403,
+  "headers": { "Content-Type": "application/json" },
+  "body": {
+    "message": "This token does not have permission to perform this action on the requested resource."
+  }
+}

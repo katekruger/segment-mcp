@@ -1,0 +1,9 @@
+{
+  "status_code": 429,
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "message": "Too many requests."
+  }
+}

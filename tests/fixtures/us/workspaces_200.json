@@ -1,0 +1,17 @@
+{
+  "status_code": 200,
+  "headers": {
+    "Content-Type": "application/json",
+    "X-RateLimit-Consumed": "1",
+    "X-RateLimit-Remaining": "999",
+    "X-RateLimit-Reset": "Sat, 29 Aug 2026 21:00:00 GMT"
+  },
+  "body": {
+    "workspace": {
+      "id": "ws_fake0000000000000000",
+      "name": "acme-demo",
+      "slug": "acme-demo",
+      "createEnabled": false
+    }
+  }
+}

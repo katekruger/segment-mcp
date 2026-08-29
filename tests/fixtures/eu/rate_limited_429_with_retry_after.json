@@ -1,0 +1,10 @@
+{
+  "status_code": 429,
+  "headers": {
+    "Content-Type": "application/json",
+    "Retry-After": "12"
+  },
+  "body": {
+    "message": "Too many requests. This token has exceeded its overall rate limit."
+  }
+}

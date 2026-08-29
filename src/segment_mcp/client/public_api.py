@@ -273,6 +273,62 @@ class SegmentPublicAPIClient:
     async def get(self, path: str, *, params: dict[str, Any] | None = None) -> dict[str, Any]:
         return await self._request("GET", path, params=params)
 
+    async def get_data(self, path: str, *, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        """`GET path` and unwrap Segment's `data` envelope.
+
+        Every Public API response wraps its payload in a top-level `data`
+        object — verified against docs.segmentapis.com (Prompt 2 research;
+        this wasn't confirmed when the client shipped in Prompt 1). Use
+        this instead of `get()` for any endpoint that follows the
+        convention, which is all of them in `tools/`.
+        """
+        body = await self.get(path, params=params)
+        raw_data = body.get("data")
+        data = _as_str_keyed_dict(raw_data)
+        if not data and raw_data != {}:
+            raise SegmentMalformedResponseError(
+                f"Segment's response for {path} had no 'data' object "
+                f"(got {type(raw_data).__name__})."
+            )
+        return data
+
+    async def paginate(
+        self,
+        path: str,
+        *,
+        items_key: str,
+        params: dict[str, Any] | None = None,
+        page_size: int = 200,
+        max_pages: int = 10,
+    ) -> tuple[list[dict[str, Any]], bool]:
+        """Follow Segment's cursor pagination (`pagination.count` /
+        `pagination.cursor` request params, `data.pagination.next`
+        response field) until exhausted or `max_pages` is hit.
+
+        Returns `(items, truncated)`. `truncated` is True only when
+        `max_pages` was reached before the API signaled there were no
+        more pages — callers must surface that rather than treating a
+        partial list as complete (BUILD-PLAN.md §5's "workspace with 200
+        sources" edge case).
+        """
+        items: list[dict[str, Any]] = []
+        cursor: str | None = None
+        for _ in range(max_pages):
+            query: dict[str, Any] = dict(params or {})
+            query["pagination.count"] = page_size
+            if cursor is not None:
+                query["pagination.cursor"] = cursor
+            data = await self.get_data(path, params=query)
+            page_items = data.get(items_key)
+            if isinstance(page_items, list):
+                items.extend(cast("list[dict[str, Any]]", page_items))
+            pagination = _as_str_keyed_dict(data.get("pagination"))
+            next_cursor = pagination.get("next")
+            cursor = next_cursor if isinstance(next_cursor, str) else None
+            if not cursor:
+                return items, False
+        return items, True
+
     async def _request(
         self,
         method: str,

@@ -1,0 +1,16 @@
+{
+  "status_code": 200,
+  "headers": { "Content-Type": "application/json" },
+  "body": {
+    "data": {
+      "metrics": [
+        { "metricName": "successful_requests", "total": 980 },
+        {
+          "metricName": "failed_requests",
+          "total": 20,
+          "breakdown": [{ "reason": "timeout", "total": 20 }]
+        }
+      ]
+    }
+  }
+}

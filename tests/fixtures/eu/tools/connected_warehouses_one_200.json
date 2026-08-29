@@ -1,0 +1,10 @@
+{
+  "status_code": 200,
+  "headers": { "Content-Type": "application/json" },
+  "body": {
+    "data": {
+      "warehouses": [{ "id": "wh_1", "workspaceId": "ws_1", "enabled": true }],
+      "pagination": { "current": "MA==", "next": null, "previous": null, "totalEntries": 1 }
+    }
+  }
+}

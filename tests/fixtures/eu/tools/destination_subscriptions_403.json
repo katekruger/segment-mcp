@@ -1,0 +1,7 @@
+{
+  "status_code": 403,
+  "headers": { "Content-Type": "application/json" },
+  "body": {
+    "message": "This feature requires Destination Subscriptions to be enabled for this workspace."
+  }
+}

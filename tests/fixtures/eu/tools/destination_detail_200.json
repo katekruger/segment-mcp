@@ -1,0 +1,15 @@
+{
+  "status_code": 200,
+  "headers": { "Content-Type": "application/json" },
+  "body": {
+    "data": {
+      "destination": {
+        "id": "dest_1",
+        "name": "Amplitude",
+        "enabled": true,
+        "settings": { "apiKey": "redacted" },
+        "sourceId": "src_1"
+      }
+    }
+  }
+}

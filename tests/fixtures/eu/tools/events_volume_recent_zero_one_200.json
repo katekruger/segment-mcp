@@ -1,0 +1,7 @@
+{
+  "status_code": 200,
+  "headers": { "Content-Type": "application/json" },
+  "body": {
+    "data": { "result": [{ "source": "src_3", "total": 0, "series": [] }] }
+  }
+}

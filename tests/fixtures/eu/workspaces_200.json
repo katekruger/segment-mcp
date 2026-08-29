@@ -7,11 +7,12 @@
     "X-RateLimit-Reset": "Sat, 29 Aug 2026 21:00:00 GMT"
   },
   "body": {
-    "workspace": {
-      "id": "ws_fake1111111111111111",
-      "name": "acme-demo-eu",
-      "slug": "acme-demo-eu",
-      "createEnabled": false
+    "data": {
+      "workspace": {
+        "id": "ws_fake1111111111111111",
+        "name": "acme-demo-eu",
+        "slug": "acme-demo-eu"
+      }
     }
   }
 }

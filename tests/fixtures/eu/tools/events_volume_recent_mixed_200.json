@@ -1,0 +1,16 @@
+{
+  "status_code": 200,
+  "headers": { "Content-Type": "application/json" },
+  "body": {
+    "data": {
+      "result": [
+        {
+          "source": "src_1",
+          "total": 42,
+          "series": [{ "time": "2026-08-15T00:00:00Z", "count": 42 }]
+        },
+        { "source": "src_2", "total": 0, "series": [] }
+      ]
+    }
+  }
+}

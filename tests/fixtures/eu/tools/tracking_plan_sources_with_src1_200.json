@@ -1,0 +1,10 @@
+{
+  "status_code": 200,
+  "headers": { "Content-Type": "application/json" },
+  "body": {
+    "data": {
+      "sources": [{ "id": "src_1", "slug": "web-app", "name": "Web App", "enabled": true }],
+      "pagination": { "current": "MA==", "next": null, "previous": null, "totalEntries": 1 }
+    }
+  }
+}

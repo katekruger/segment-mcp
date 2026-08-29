@@ -7,12 +7,14 @@
     "X-RateLimit-Reset": "Sat, 29 Aug 2026 21:00:00 GMT"
   },
   "body": {
-    "data": [],
-    "cursor": {
-      "url": null,
-      "hasNext": false,
-      "next": null,
-      "limit": 100
+    "data": {
+      "sources": [],
+      "pagination": {
+        "current": "MA==",
+        "next": null,
+        "previous": null,
+        "totalEntries": 0
+      }
     }
   }
 }

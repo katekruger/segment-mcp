@@ -1,0 +1,18 @@
+{
+  "status_code": 200,
+  "headers": { "Content-Type": "application/json" },
+  "body": {
+    "data": {
+      "subscriptions": [
+        {
+          "id": "sub_1",
+          "name": "Track all",
+          "actionId": "trackEvent",
+          "trigger": { "type": "track" },
+          "enabled": true
+        }
+      ],
+      "pagination": { "current": "MA==", "next": null, "previous": null, "totalEntries": 1 }
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "status_code": 200,
+  "headers": { "Content-Type": "application/json" },
+  "body": {
+    "data": {
+      "trackingPlans": [{ "id": "tp_1", "name": "Core Events", "slug": "core-events" }],
+      "pagination": { "current": "MA==", "next": null, "previous": null, "totalEntries": 1 }
+    }
+  }
+}

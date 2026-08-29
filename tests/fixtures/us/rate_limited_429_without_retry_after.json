@@ -1,0 +1,14 @@
+{
+  "status_code": 429,
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "message": "Too many requests to this endpoint.",
+    "data": {
+      "msBeforeNext": 4500,
+      "remainingPoints": 0,
+      "consumedPoints": 61
+    }
+  }
+}

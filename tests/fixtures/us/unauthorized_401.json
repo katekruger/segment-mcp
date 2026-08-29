@@ -1,0 +1,7 @@
+{
+  "status_code": 401,
+  "headers": { "Content-Type": "application/json" },
+  "body": {
+    "message": "Unauthorized: the provided token is invalid or has been revoked."
+  }
+}

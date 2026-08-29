@@ -1,0 +1,18 @@
+{
+  "status_code": 200,
+  "headers": {
+    "Content-Type": "application/json",
+    "X-RateLimit-Consumed": "1",
+    "X-RateLimit-Remaining": "199",
+    "X-RateLimit-Reset": "Sat, 29 Aug 2026 21:00:00 GMT"
+  },
+  "body": {
+    "data": [],
+    "cursor": {
+      "url": null,
+      "hasNext": false,
+      "next": null,
+      "limit": 100
+    }
+  }
+}

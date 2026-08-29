@@ -1,0 +1,7 @@
+{
+  "status_code": 403,
+  "headers": { "Content-Type": "application/json" },
+  "body": {
+    "message": "This feature is not available on your current plan. The Public API requires an upgrade to Team or Business tier."
+  }
+}

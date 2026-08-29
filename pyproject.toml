@@ -46,6 +46,11 @@ dev = [
     "pyright==1.1.411",
     "pytest>=8.3",
     "pytest-cov>=6.0",
+    # The client is fully async (httpx.AsyncClient). Declared explicitly
+    # rather than relying on the anyio pytest plugin that `mcp` pulls in
+    # transitively — that's an implementation detail of `mcp`, not a
+    # contract this repo should depend on.
+    "pytest-asyncio>=0.24",
     "pre-commit>=4.0",
 ]
 
@@ -81,7 +86,7 @@ ignore = [
 "tests/**" = ["S101", "S105", "S106", "S107", "S311"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["segment_mcp"]
+known-first-party = ["segment_mcp", "tests"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -97,6 +102,7 @@ reportMissingTypeStubs = false
 testpaths = ["tests"]
 addopts = "--cov=segment_mcp --cov-report=term-missing"
 filterwarnings = ["error"]
+asyncio_mode = "auto"
 
 [tool.coverage.run]
 source = ["src/segment_mcp"]

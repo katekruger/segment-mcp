@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Path traversal via tool-supplied `source_id`/`destination_id`
+  (ENG-1, high severity).** Every ID interpolated into a Public API
+  request path now goes through `client/validation.py`'s
+  `validate_resource_id()`, which refuses anything that isn't a bare
+  Segment identifier before the request is built — confirmed live before
+  this fix, `source_id="../regulations"` sent
+  `GET https://api.segmentapis.com/regulations` instead of a source
+  lookup, and `source_id="../../v1beta/users?x=1"` escaped further and
+  injected a query string, both using a Workspace Owner token. Applied at
+  every tool-argument boundary and at every ID drawn from a prior API
+  response (`source.id`, `plan.id`) before it's reused in the next
+  request. See ADR 0003.
+
 ## 0.1.1 - 2026-08-30
 
 ### Added

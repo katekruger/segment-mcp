@@ -20,6 +20,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from segment_mcp.client.public_api import SegmentAPIError, SegmentPublicAPIClient
+from segment_mcp.client.validation import validate_resource_id
 from segment_mcp.tools._shared import (
     DEFAULT_MAX_ITEMS,
     Gap,
@@ -105,8 +106,13 @@ async def audit_event_routing(
     routing: list[SourceRouting] = []
     for source in sources:
         try:
+            # source.id came back from Segment's own /sources response, not
+            # this call's argument — validated anyway per the "a compromised
+            # or malformed upstream response is the same attack with an
+            # extra hop" rule.
+            validated_source_id = validate_resource_id(source.id, kind="source.id")
             raw_destinations, _truncated = await client.paginate(
-                f"/sources/{source.id}/connected-destinations",
+                f"/sources/{validated_source_id}/connected-destinations",
                 items_key="destinations",
                 page_size=200,
             )
@@ -168,6 +174,9 @@ async def _describe_destination(
     enabled = True
     settings: dict[str, Any] = {}
     try:
+        # destination_id came back from Segment's own connected-destinations
+        # response — validated anyway; see the note in audit_event_routing.
+        destination_id = validate_resource_id(destination_id, kind="destination_id")
         data = await client.get_data(f"/destinations/{destination_id}")
         destination = as_dict(data.get("destination"))
         name = str(destination.get("name", destination_id))
@@ -179,6 +188,7 @@ async def _describe_destination(
     subscriptions: list[SubscriptionSummary] | None = None
     if include_subscriptions:
         try:
+            destination_id = validate_resource_id(destination_id, kind="destination_id")
             raw_subs, _truncated = await client.paginate(
                 f"/destinations/{destination_id}/subscriptions",
                 items_key="subscriptions",
@@ -278,14 +288,20 @@ async def trace_event(
     An event in no tracking plan is the interesting answer, not an empty
     result — `governed=False` and `governance_note` say so explicitly.
     """
+    if source_id is not None:
+        # Validated before ANY client call — a traversal source_id must
+        # never reach list_tracking_plans or event_volume_by_source either.
+        source_id = validate_resource_id(source_id, kind="source_id")
+
     tracking_plans = await list_tracking_plans(client, max_items=max_tracking_plans)
     gaps: list[Gap] = []
 
     coverage: list[TrackingPlanCoverage] = []
     for plan in tracking_plans:
         try:
+            validated_plan_id = validate_resource_id(plan.id, kind="tracking_plan.id")
             rules, _truncated = await client.paginate(
-                f"/tracking-plans/{plan.id}/rules", items_key="rules", page_size=200
+                f"/tracking-plans/{validated_plan_id}/rules", items_key="rules", page_size=200
             )
         except SegmentAPIError as exc:
             gaps.append(Gap(area=f"tracking plan {plan.id} rules", reason=str(exc)))
@@ -347,8 +363,14 @@ async def trace_event(
     warehouses: list[ConnectedWarehouse] = []
     for scoped_id in scoped_source_ids:
         try:
+            # scoped_id is either the caller's own source_id (already
+            # validated above) or one drawn from event-volume results —
+            # validated here regardless, defense in depth per the same
+            # "API-response-derived IDs are the same attack with an extra
+            # hop" reasoning.
+            validated_scoped_id = validate_resource_id(scoped_id, kind="source_id")
             raw_destinations, _truncated = await client.paginate(
-                f"/sources/{scoped_id}/connected-destinations", items_key="destinations"
+                f"/sources/{validated_scoped_id}/connected-destinations", items_key="destinations"
             )
             for raw in raw_destinations:
                 destination_id = raw.get("id")
@@ -365,8 +387,9 @@ async def trace_event(
             gaps.append(Gap(area=f"source {scoped_id} connected destinations", reason=str(exc)))
 
         try:
+            validated_scoped_id = validate_resource_id(scoped_id, kind="source_id")
             raw_warehouses, _truncated = await client.paginate(
-                f"/sources/{scoped_id}/connected-warehouses", items_key="warehouses"
+                f"/sources/{validated_scoped_id}/connected-warehouses", items_key="warehouses"
             )
             for raw in raw_warehouses:
                 warehouse_id = raw.get("id")

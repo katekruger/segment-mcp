@@ -26,6 +26,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field
 
 from segment_mcp.client.public_api import SegmentAPIError, SegmentPublicAPIClient
+from segment_mcp.client.validation import validate_resource_id
 from segment_mcp.tools._shared import (
     DEFAULT_MAX_ITEMS,
     Gap,
@@ -263,6 +264,9 @@ async def check_delivery_health(
     """Is this destination silently failing? `GET /destinations/{id}/delivery-metrics`,
     with the requested window validated against the real per-granularity
     caps rather than assumed to fit."""
+    # Validated before any client call — destination_id is interpolated
+    # directly into both requests below.
+    destination_id = validate_resource_id(destination_id, kind="destination_id")
     now = utc_now()
     effective_start, effective_end, capped, cap_note = _resolve_window(
         granularity, start_time, end_time, now=now

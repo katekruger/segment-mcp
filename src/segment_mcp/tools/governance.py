@@ -13,6 +13,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from segment_mcp.client.public_api import SegmentAPIError, SegmentPublicAPIClient
+from segment_mcp.client.validation import validate_resource_id
 from segment_mcp.tools._shared import (
     DEFAULT_MAX_ITEMS,
     Gap,
@@ -69,8 +70,9 @@ async def find_ungoverned_sources(
     governed_source_ids: dict[str, list[str]] = {}
     for plan in tracking_plans:
         try:
+            validated_plan_id = validate_resource_id(plan.id, kind="tracking_plan.id")
             plan_sources, _truncated = await client.paginate(
-                f"/tracking-plans/{plan.id}/sources", items_key="sources", page_size=200
+                f"/tracking-plans/{validated_plan_id}/sources", items_key="sources", page_size=200
             )
         except SegmentAPIError as exc:
             gaps.append(Gap(area=f"tracking plan {plan.id} sources", reason=str(exc)))
@@ -89,7 +91,8 @@ async def find_ungoverned_sources(
         allow_unplanned: bool | None = None
         settings_gap: str | None = None
         try:
-            settings_data = await client.get_data(f"/sources/{source.id}/settings")
+            validated_source_id = validate_resource_id(source.id, kind="source.id")
+            settings_data = await client.get_data(f"/sources/{validated_source_id}/settings")
             track_settings = as_dict(as_dict(settings_data.get("settings")).get("track"))
             raw_allow = track_settings.get("allowUnplannedEvents")
             allow_unplanned = raw_allow if isinstance(raw_allow, bool) else None

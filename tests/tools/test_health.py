@@ -144,3 +144,17 @@ async def test_delivery_health_degrades_gracefully_when_destination_name_unavail
     assert result.destination_name is None
     assert len(result.gaps) == 1
     assert result.metrics  # the metrics call itself still succeeded
+
+
+async def test_delivery_health_works_against_eu_region_fixtures() -> None:
+    client = make_client(
+        {
+            "/destinations/dest_1": "tools/destination_detail_200.json",
+            "/destinations/dest_1/delivery-metrics": "tools/delivery_metrics_200.json",
+        },
+        region=Region.EU,
+    )
+    async with client:
+        result = await check_delivery_health(client, destination_id="dest_1", source_id="src_1")
+    assert result.region == "eu"
+    assert result.destination_name == "Amplitude"

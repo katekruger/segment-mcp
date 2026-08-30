@@ -1,35 +1,101 @@
 # segment-mcp
 
+[![CI](https://github.com/katekruger/segment-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/katekruger/segment-mcp/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/segment-mcp.svg)](https://pypi.org/project/segment-mcp/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 **A read-first MCP server for Twilio Segment.** Answers which destinations
 get which events, which sources are dead, and which are governed by
 nothing — the questions nobody can answer without clicking through forty
 screens.
 
-**Read-only by default.** `SEGMENT_MCP_MODE` defaults to `read`, and every
-tool shipped so far is a read. This is a feature, not a limitation — see
-`BUILD-PLAN.md` §2.
+## Read-only by default
 
-**Data deletion is not exposed. At all.** `POST /regulations` and
-`POST /regulations/sources/{id}` are permanently unreachable in every
-mode, checked three independent ways. See
-`docs/what-this-refuses-to-do.md` and
-`docs/decisions/0002-tier-1-permanently-unreachable.md`.
+`SEGMENT_MCP_MODE` defaults to `read`, and every tool this server ships
+today is a read. Shipping with zero write tools is a feature, not a
+limitation — see `BUILD-PLAN.md` §2. `write` and `admin` modes exist in
+the tier model (`src/segment_mcp/modes.py`) for when gated writes land;
+right now there is nothing for them to unlock.
 
-Status: v0.1 in progress. See `BUILD-PLAN.md` for the full design and
-scope.
+## What this refuses to do — permanently, not "for now"
 
-## Tools (v0.1)
+`POST /regulations` and `POST /regulations/sources/{id}` — workspace-scoped,
+irreversible deletion or suppression of user data across every source —
+are **unreachable in every mode, with no configuration path to enable
+them.** Three independent things enforce this: the mode-authorization
+layer refuses it before even checking the current mode, the API client
+refuses to send the request before it reaches the network, and no tool
+this server registers references it in any form.
 
-Five composed questions, not raw endpoint wrappers — each joins several
-Public API calls into one structured answer:
+This isn't a gate waiting for the right permission level. It's a line,
+because these endpoints accept an array of subjects and one malformed or
+hallucinated call can permanently delete thousands of profiles with no
+undo. Full reasoning: **[docs/what-this-refuses-to-do.md](docs/what-this-refuses-to-do.md)**.
 
-| Tool | Answers |
+## Quick start
+
+Requires a Segment workspace on Team or Business tier and a Public API
+token (see [Prerequisites](#prerequisites) below).
+
+```bash
+gh repo clone katekruger/segment-mcp
+cd segment-mcp
+uv sync
+cp .env.example .env      # fill in SEGMENT_API_TOKEN and SEGMENT_REGION
+uv run segment-mcp
+```
+
+Point an MCP client (Claude Desktop, Claude Code, etc.) at it over stdio.
+The server refuses to start — loudly, with a clear message — if the
+token, region, or workspace tier isn't right; see
+[Startup checks](#startup-checks).
+
+## The five tools
+
+Each composes several Public API calls into one structured answer, not a
+raw endpoint dump:
+
+| Tool | Question it answers |
 |---|---|
 | `audit_event_routing` | Which destinations get which events? |
 | `trace_event` | Given an event name: where does it go, and is it governed by anything? |
-| `find_stale_sources` | Which sources have no recent data? |
+| `find_stale_sources` | Which sources have no recent data — dead instrumentation vs. simply new? |
 | `check_delivery_health` | Is this destination silently failing? |
 | `find_ungoverned_sources` | Which sources are governed by nothing, or allowing unplanned events through? |
+
+## Prerequisites
+
+- **Team or Business tier.** The Public API is not available on Free or
+  Add-on plans. There is no workaround, and the server's startup checks
+  fail with a clear message rather than a raw 403 if your workspace
+  doesn't qualify.
+- **A Public API token.** Only a Workspace Owner can mint one: Segment App
+  → Workspace Settings → Access Management → Tokens → Create Token →
+  Public API (not Config API).
+
+## Region configuration
+
+```
+SEGMENT_REGION=us   # or eu
+```
+
+There is **no default** — you must set this explicitly. An EU workspace
+whose API calls are pointed at the US endpoint doesn't error; it just
+silently returns nothing, which is a far worse failure mode than a crash.
+This server's startup checks call the API once with your configured
+region and fail loudly if the token doesn't actually belong to it,
+naming the region that does.
+
+## Startup checks
+
+All fatal — the server refuses to start rather than fail confusingly on
+the first tool call:
+
+1. `SEGMENT_REGION` is set and one of `us`/`eu`.
+2. `SEGMENT_API_TOKEN` is present and actually authenticates against that
+   region.
+3. The workspace's tier supports the Public API — a Free-tier workspace
+   gets a clear "requires Team or Business tier" message, not a raw 403.
 
 ## Modes
 
@@ -43,10 +109,10 @@ SEGMENT_MCP_MODE = read (default) | write | admin
 - **`admin`** — would add Tier 2 deletes (none shipped yet), gated behind
   a *typed* confirmation naming the exact resource — not just
   `confirm=true`.
-- **Tier 1 is unreachable in every mode**, unconditionally. See
-  `docs/what-this-refuses-to-do.md`.
 
-See `src/segment_mcp/modes.py` for the full tier model.
+See `src/segment_mcp/modes.py` for the full tier model and
+[docs/what-this-refuses-to-do.md](docs/what-this-refuses-to-do.md) for
+what stays out of scope regardless of mode.
 
 ## Profile API — a separate, higher trust tier
 
@@ -60,7 +126,7 @@ off from everything else:
   Unify Space ID, not your workspace ID).
 - **Explicit opt-in.** If `SEGMENT_PROFILE_TOKEN` is unset, no profile
   tool is registered — the capability doesn't exist for that server
-  instance, not just "requires a flag to use."
+  instance.
 - **Every lookup is logged** — collection, the normalized lookup key, and
   the caller — before the request is even sent, via
   `client/profile_api.py`'s `segment_mcp.profile_api` logger.
@@ -70,21 +136,17 @@ off from everything else:
 
 No profile-lookup MCP tool is wired into `server.py` yet — this is the
 client and trust-boundary machinery a future tool will be built on, per
-BUILD-PLAN.md's v0.2 scope.
+`BUILD-PLAN.md`'s v0.2 scope.
 
-## Setup
-
-Requires a Segment workspace on **Team or Business tier** — the Public API
-is not available on Free or Add-on plans — and a Public API token, which
-only a Workspace Owner can mint. See `.env.example`.
+## Development
 
 ```bash
-gh repo clone katekruger/segment-mcp
-cd segment-mcp
 uv sync
 uv run pre-commit install
-cp .env.example .env      # fill in your own values; never commit this file
+uv run ruff check . && uv run ruff format --check . && uv run pyright && uv run pytest
 ```
+
+See `CONTRIBUTING.md` and `AGENTS.md`.
 
 ## License
 

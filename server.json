@@ -1,0 +1,49 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.katekruger/segment-mcp",
+  "title": "segment-mcp",
+  "description": "A read-first MCP server for Twilio Segment. Answers which destinations get which events, which sources are dead, and which are governed by nothing. Read-only by default; data deletion is not exposed at all.",
+  "repository": {
+    "url": "https://github.com/katekruger/segment-mcp",
+    "source": "github"
+  },
+  "version": "0.1.1",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "segment-mcp",
+      "version": "0.1.1",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "SEGMENT_API_TOKEN",
+          "description": "Segment Public API token. Only a Workspace Owner can mint one — Segment App -> Workspace Settings -> Access Management -> Tokens -> Create Token -> Public API.",
+          "isRequired": true,
+          "isSecret": true
+        },
+        {
+          "name": "SEGMENT_REGION",
+          "description": "Workspace region: 'us' or 'eu'. No default — must be set explicitly, or the server refuses to start.",
+          "isRequired": true
+        },
+        {
+          "name": "SEGMENT_MCP_MODE",
+          "description": "read (default) | write | admin. Every tool in v0.1 is read-only regardless of this setting.",
+          "default": "read"
+        },
+        {
+          "name": "SEGMENT_PROFILE_TOKEN",
+          "description": "Separate credential for the Profile API (not yet wired to a tool in this version). Leave unset."
+        },
+        {
+          "name": "SEGMENT_PROFILE_SPACE_ID",
+          "description": "Unify Space ID for the Profile API (not yet wired to a tool in this version). Leave unset."
+        }
+      ]
+    }
+  ]
+}

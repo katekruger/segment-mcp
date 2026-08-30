@@ -140,15 +140,27 @@ class Tier1BlockedError(SegmentAPIError):
 # --------------------------------------------------------------------------
 
 
-def _refuse_if_tier1_mutation(method: str, path: str) -> None:
+def _refuse_if_tier1_mutation(method: str, path: str, *, base_url: httpx.URL) -> None:
     """Raise before a single byte goes over the network if this is a
-    mutating (non-GET) call anywhere under `/regulations`."""
+    mutating (non-GET) call anywhere under `/regulations`.
+
+    Matches on the URL httpx will actually resolve, not the raw string
+    passed in — an earlier version of this guard did a bare
+    `path.split("?", 1)[0]` string-prefix check, which missed a
+    `#fragment` it never stripped, a `.`/`..` path segment it never
+    normalized, a request path with no leading slash, an absolute URL
+    override, and case variation (`/REGULATIONS`). `base_url.join(path)`
+    resolves all of those the same way the underlying request will, which
+    is exactly why the check runs against it rather than reimplementing
+    URL resolution here. See
+    docs/decisions/0004-tier1-guard-matches-resolved-url.md.
+    """
     if method.upper() == "GET":
         return
-    normalized_path = path.split("?", 1)[0]
-    if normalized_path == _TIER1_BLOCKED_PATH_PREFIX or normalized_path.startswith(
-        _TIER1_BLOCKED_PATH_PREFIX + "/"
-    ):
+    resolved = base_url.join(path)
+    normalized_path = resolved.path.rstrip("/").casefold()
+    blocked_prefix = _TIER1_BLOCKED_PATH_PREFIX.casefold()
+    if normalized_path == blocked_prefix or normalized_path.startswith(blocked_prefix + "/"):
         raise Tier1BlockedError(
             f"Refused: {method.upper()} {path} is a Tier 1 action "
             "(regulation/deletion creation) and is permanently unreachable "
@@ -379,7 +391,7 @@ class SegmentPublicAPIClient:
         params: dict[str, Any] | None = None,
         json_body: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        _refuse_if_tier1_mutation(method, path)
+        _refuse_if_tier1_mutation(method, path, base_url=self._client.base_url)
         await self._limiter.wait_if_needed(method, path)
         response = await self._client.request(method, path, params=params, json=json_body)
 

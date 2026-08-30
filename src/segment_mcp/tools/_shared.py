@@ -20,6 +20,7 @@ from typing import Any, cast
 from pydantic import BaseModel, Field
 
 from segment_mcp.client.public_api import SegmentPublicAPIClient
+from segment_mcp.client.validation import validate_resource_id
 
 
 def as_dict(value: object) -> dict[str, Any]:
@@ -129,6 +130,7 @@ async def list_sources_scoped(
     workspace. Shared by every tool that starts from "the sources".
     """
     if source_id is not None:
+        source_id = validate_resource_id(source_id, kind="source_id")
         data = await client.get_data(f"/sources/{source_id}")
         raw_source = as_dict(data.get("source"))
         if not raw_source:

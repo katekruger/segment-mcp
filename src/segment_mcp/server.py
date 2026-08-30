@@ -6,10 +6,15 @@ only the tools `SEGMENT_MCP_MODE` actually reaches — every v0.1 tool is
 `Tier.READ`, reachable in every mode, so nothing is filtered out yet, but
 the mechanism is real and tested now rather than bolted on when the
 first `write`/`admin` tool lands (see `modes.py`).
+
+`main()` parses `sys.argv` before running the fatal startup checks —
+`segment-mcp --help`/`--version` exit 0 with no configuration and no
+network call, via argparse's own built-in handling of those flags.
 """
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import os
 import sys
@@ -334,7 +339,28 @@ def register_tools(target: MCPServer, mode: Mode, specs: list[ToolSpec] | None =
 register_tools(mcp, _MODE)
 
 
+def _build_arg_parser() -> argparse.ArgumentParser:
+    """`--help`/`--version` must work with zero configuration: no
+    SEGMENT_API_TOKEN, no SEGMENT_REGION, no network call. `main()` used
+    to ignore `sys.argv` entirely and run the fatal startup checks
+    unconditionally, so `segment-mcp --help` died with a config error
+    instead of printing usage — the first thing anyone types after
+    installing. Parsing args (and letting argparse's built-in `--help`/
+    `--version` actions exit 0 on their own) happens before
+    `run_startup_checks()` is ever reached."""
+    parser = argparse.ArgumentParser(
+        prog="segment-mcp",
+        description=(
+            "Read-first MCP server for Twilio Segment. Configuration is via "
+            "environment variables — see .env.example."
+        ),
+    )
+    parser.add_argument("--version", action="version", version=f"segment-mcp {__version__}")
+    return parser
+
+
 def main() -> None:
+    _build_arg_parser().parse_args()
     asyncio.run(run_startup_checks())
     mcp.run()
 

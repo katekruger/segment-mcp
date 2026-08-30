@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Path traversal via tool-supplied `source_id`/`destination_id`
+  (ENG-1, high severity).** Every ID interpolated into a Public API
+  request path now goes through `client/validation.py`'s
+  `validate_resource_id()`, which refuses anything that isn't a bare
+  Segment identifier before the request is built — confirmed live before
+  this fix, `source_id="../regulations"` sent
+  `GET https://api.segmentapis.com/regulations` instead of a source
+  lookup, and `source_id="../../v1beta/users?x=1"` escaped further and
+  injected a query string, both using a Workspace Owner token. Applied at
+  every tool-argument boundary and at every ID drawn from a prior API
+  response (`source.id`, `plan.id`) before it's reused in the next
+  request. See ADR 0003.
+- **Tier 1 client guard was bypassable via URL forms it never normalized
+  (ENG-2, high severity, latent — no non-GET tool exists yet to trigger
+  it).** `_refuse_if_tier1_mutation()` now resolves the request path
+  against the client's base URL with `httpx.URL.join()` before comparing
+  it to the blocked prefix, closing seven bypasses the old string-prefix
+  check missed: a `#fragment` it never stripped, a `.`/`..` path segment
+  it never normalized, a missing leading slash, an absolute URL override,
+  and case variation (`/REGULATIONS`, `/Regulations`).
+  `tests/test_tier1_unreachable.py` is now parametrized over all ten known
+  bypass strings across all four non-GET methods (40 cases), plus negative
+  cases proving `POST /sources` and a legitimate `/regulations-adjacent`
+  path are not caught by the boundary check. See ADR 0004.
+
+### Fixed
+
+- Profile API lookups (`client/profile_api.py`) no longer log the raw
+  identifier at INFO level — `email:jane@example.com`-shaped values are
+  now logged as `id_type=email key_sha256=<16-hex-char digest>`, keeping
+  lookups correlatable across log lines for auditing without putting a
+  reversible PII value in application logs.
+- `segment-mcp --help` and `segment-mcp --version` now exit 0 without
+  requiring `SEGMENT_API_TOKEN`/`SEGMENT_REGION` or making any network
+  call — previously `main()` ran the fatal startup checks unconditionally
+  and ignored `sys.argv` entirely, so the first thing anyone typed after
+  installing died with a config error.
+
 ## 0.1.1 - 2026-08-30
 
 ### Added

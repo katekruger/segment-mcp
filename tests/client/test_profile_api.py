@@ -109,11 +109,15 @@ async def test_no_warning_when_value_is_already_lowercase(
 
 
 # --------------------------------------------------------------------------
-# Every lookup is logged: key, route, and the caller
+# Every lookup is logged: id_type, a digest of the key, the route, and the
+# caller — never the raw identifier. See ENG-3a: a Profile API client
+# logging `email:jane@example.com` in plaintext at INFO is a GDPR/CCPA
+# liability regardless of how the README frames "every lookup is logged"
+# as a privacy feature.
 # --------------------------------------------------------------------------
 
 
-async def test_every_lookup_is_logged_with_key_and_caller(
+async def test_every_lookup_is_logged_with_digest_and_caller(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     async with make_client("us/profile/traits_200.json") as client:
@@ -124,8 +128,40 @@ async def test_every_lookup_is_logged_with_key_and_caller(
 
     messages = [r.message for r in caplog.records]
     assert any(
-        "email:jane@example.com" in m and "traits" in m and "trace_event" in m for m in messages
+        "id_type=email" in m and "key_sha256=" in m and "traits" in m and "trace_event" in m
+        for m in messages
     )
+
+
+async def test_lookup_log_never_contains_the_raw_identifier(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    async with make_client("us/profile/traits_200.json") as client:
+        with caplog.at_level(logging.INFO, logger="segment_mcp.profile_api"):
+            await client.get_traits("users", "email", "jane@example.com")
+
+    for record in caplog.records:
+        assert "jane@example.com" not in record.message
+
+
+async def test_lookup_digest_is_stable_across_calls_for_the_same_identifier(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    async with make_client("us/profile/traits_200.json", "us/profile/traits_200.json") as client:
+        with caplog.at_level(logging.INFO, logger="segment_mcp.profile_api"):
+            await client.get_traits("users", "email", "jane@example.com")
+            await client.get_traits("users", "email", "jane@example.com")
+
+    digests = [_extract_digest(r.message) for r in caplog.records if "key_sha256=" in r.message]
+    assert len(digests) == 2
+    assert digests[0] == digests[1]
+
+
+def _extract_digest(message: str) -> str:
+    for part in message.split():
+        if part.startswith("key_sha256="):
+            return part.removeprefix("key_sha256=")
+    raise AssertionError(f"no key_sha256= field in {message!r}")
 
 
 # --------------------------------------------------------------------------

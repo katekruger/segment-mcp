@@ -55,6 +55,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   published). Shortened to fit; `tests/test_server_json.py` now guards
   `description`/`title`/`name` against the registry's length limits so
   this can't silently regress on a future release.
+- `release.yml`: `publish-mcp-registry` now sits behind its own
+  `mcp-registry-release` environment, requiring manual approval
+  independent of the existing `release` environment that gates PyPI
+  publish. Previously it auto-ran the instant PyPI publish succeeded, with
+  no window to decide "PyPI now, registry separately" for a given tag.
 
 ## 0.1.1 - 2026-08-30
 

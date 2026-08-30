@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.katekruger/segment-mcp",
   "title": "segment-mcp",
-  "description": "A read-first MCP server for Twilio Segment. Answers which destinations get which events, which sources are dead, and which are governed by nothing. Read-only by default; data deletion is not exposed at all.",
+  "description": "Read-first MCP server for Twilio Segment: routing, stale sources, delivery health, governance.",
   "repository": {
     "url": "https://github.com/katekruger/segment-mcp",
     "source": "github"

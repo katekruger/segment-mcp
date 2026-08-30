@@ -9,10 +9,21 @@ Three independent checks, any one of which failing is a critical bug:
    mode.
 2. The client itself refuses to send the request, in every mode.
 3. No registered tool definition references `/regulations` at all.
+
+Check 2 is parametrized over ten confirmed bypass strings — three that a
+naive `path.split("?", 1)[0]` string-prefix check already caught, and
+seven an external audit found it missed (a `#fragment` it didn't strip, a
+`.`/`..`-segment it didn't normalize, a missing leading slash, an absolute
+URL, and case variation) — across all four non-GET methods, per
+docs/decisions/0004-tier1-guard-matches-resolved-url.md. Never relax this
+back down to the original three strings or to a single method: the whole
+point of this rewrite is that the narrow version passed while the guard
+was still bypassable.
 """
 
 from __future__ import annotations
 
+import httpx
 import pytest
 
 from segment_mcp import server
@@ -48,32 +59,59 @@ def test_authorize_refuses_tier1_even_with_every_confirmation_supplied() -> None
 # 2. The client refuses the path — braces
 # --------------------------------------------------------------------------
 
+# The three strings the original (string-prefix) guard already caught,
+# plus the seven the audit confirmed it missed. All ten must be refused
+# for every non-GET method — see the module docstring.
+TIER1_BYPASS_PATHS = [
+    "/regulations",
+    "/regulations/sources/src_1",
+    "/regulations/cloudsources/src_1",
+    "/regulations#frag",
+    "/./regulations",
+    "/foo/../regulations",
+    "regulations",
+    "https://api.segmentapis.com/regulations",
+    "/REGULATIONS",
+    "/Regulations",
+]
 
-@pytest.mark.parametrize("region", [Region.US, Region.EU])
-@pytest.mark.parametrize(
-    "path",
-    [
-        "/regulations",
-        "/regulations/sources/src_1",
-        "/regulations/cloudsources/src_1",
-    ],
-)
-async def test_client_refuses_post_to_regulations_paths(path: str, region: Region) -> None:
+NON_GET_METHODS = ["POST", "PUT", "PATCH", "DELETE"]
+
+
+@pytest.mark.parametrize("method", NON_GET_METHODS)
+@pytest.mark.parametrize("path", TIER1_BYPASS_PATHS)
+async def test_client_refuses_every_mutation_bypass_form(path: str, method: str) -> None:
     # No transport is configured — if this reached the network layer at
     # all, it would hang or error on a real connection attempt instead of
     # raising Tier1BlockedError immediately. It must never get that far.
-    client = SegmentPublicAPIClient("fake-token", region)
+    client = SegmentPublicAPIClient("fake-token", Region.US)
     async with client:
         with pytest.raises(Tier1BlockedError):
-            await client._request("POST", path)  # pyright: ignore[reportPrivateUsage]
+            await client._request(method, path)  # pyright: ignore[reportPrivateUsage]
+
+
+@pytest.mark.parametrize("method", NON_GET_METHODS)
+async def test_client_refuses_every_bypass_form_against_eu_base_url_too(method: str) -> None:
+    # The guard resolves against the client's own base_url — prove that
+    # holds for the EU region too, not just the US one every other test
+    # in this file uses.
+    client = SegmentPublicAPIClient("fake-token", Region.EU)
+    async with client:
+        with pytest.raises(Tier1BlockedError):
+            await client._request(method, "/regulations")  # pyright: ignore[reportPrivateUsage]
+
+
+# --------------------------------------------------------------------------
+# Negative cases — a naive `startswith` fix without a `/` boundary check
+# would block a legitimate future endpoint that merely starts with the
+# same letters. These must NOT raise.
+# --------------------------------------------------------------------------
 
 
 async def test_client_still_allows_reading_regulations() -> None:
     # The refusal is POST-shaped, not path-shaped — GET /regulations,
     # GET /regulations/{id}, and GET /suppressions are in scope for v0.2
     # (BUILD-PLAN.md §6) and must not be caught by this guard.
-    import httpx
-
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"data": {"regulations": []}})
 
@@ -81,6 +119,31 @@ async def test_client_still_allows_reading_regulations() -> None:
     async with client:
         body = await client.get("/regulations")
     assert body == {"data": {"regulations": []}}
+
+
+async def test_client_allows_posting_to_an_unrelated_endpoint() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(201, json={"data": {"source": {"id": "src_new"}}})
+
+    client = SegmentPublicAPIClient("fake-token", Region.US, transport=httpx.MockTransport(handler))
+    async with client:
+        body = await client._request("POST", "/sources")  # pyright: ignore[reportPrivateUsage]
+    assert body == {"data": {"source": {"id": "src_new"}}}
+
+
+async def test_client_allows_posting_to_a_path_that_merely_starts_with_regulations() -> None:
+    # A resource genuinely named "regulations-adjacent" is not
+    # "/regulations" or a child of it — a boundary-unaware `startswith`
+    # fix would wrongly block this.
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(201, json={"data": {"id": "ra_1"}})
+
+    client = SegmentPublicAPIClient("fake-token", Region.US, transport=httpx.MockTransport(handler))
+    async with client:
+        body = await client._request(  # pyright: ignore[reportPrivateUsage]
+            "POST", "/regulations-adjacent"
+        )
+    assert body == {"data": {"id": "ra_1"}}
 
 
 # --------------------------------------------------------------------------

@@ -21,6 +21,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   every tool-argument boundary and at every ID drawn from a prior API
   response (`source.id`, `plan.id`) before it's reused in the next
   request. See ADR 0003.
+- **Tier 1 client guard was bypassable via URL forms it never normalized
+  (ENG-2, high severity, latent — no non-GET tool exists yet to trigger
+  it).** `_refuse_if_tier1_mutation()` now resolves the request path
+  against the client's base URL with `httpx.URL.join()` before comparing
+  it to the blocked prefix, closing seven bypasses the old string-prefix
+  check missed: a `#fragment` it never stripped, a `.`/`..` path segment
+  it never normalized, a missing leading slash, an absolute URL override,
+  and case variation (`/REGULATIONS`, `/Regulations`).
+  `tests/test_tier1_unreachable.py` is now parametrized over all ten known
+  bypass strings across all four non-GET methods (40 cases), plus negative
+  cases proving `POST /sources` and a legitimate `/regulations-adjacent`
+  path are not caught by the boundary check. See ADR 0004.
 
 ## 0.1.1 - 2026-08-30
 

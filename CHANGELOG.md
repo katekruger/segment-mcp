@@ -48,6 +48,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   call — previously `main()` ran the fatal startup checks unconditionally
   and ignored `sys.argv` entirely, so the first thing anyone typed after
   installing died with a config error.
+- `server.json`'s `description` was 206 characters — over the MCP
+  Registry's 100-character limit. This is what broke the v0.1.1 release's
+  `publish to the MCP Registry` job (a 422 after PyPI publish and the
+  GitHub Release had already succeeded, leaving that release partially
+  published). Shortened to fit; `tests/test_server_json.py` now guards
+  `description`/`title`/`name` against the registry's length limits so
+  this can't silently regress on a future release.
 
 ## 0.1.1 - 2026-08-30
 

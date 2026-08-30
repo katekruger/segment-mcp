@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## 0.1.0 - 2026-08-30
 
+### Changed
+
+- Repo flipped public. Secret scanning, push protection, CodeQL default
+  setup, private vulnerability reporting, and Dependabot alerts + security
+  updates all enabled. `ci.yml`: expanded from a single job to a Python
+  3.12/3.13 matrix, now that Actions minutes aren't metered the way they
+  were while private. `zizmor.yml`'s SARIF upload no longer needs
+  `continue-on-error` now that code scanning is on.
+
 ### Added
 
 - `server.py`: fatal startup checks (`run_startup_checks()`) — region set

@@ -9,25 +9,29 @@ Planned for release, once v0.1.0 (BUILD-PLAN.md §9, M5) is ready to ship.
 
 ## Before flipping to public
 
-- [ ] Repo visibility: private → public (Settings → Danger Zone)
-- [ ] Secret scanning: on (free automatically once public)
-- [ ] Push protection: on
-- [ ] CodeQL default setup: on (Settings → Code security)
-- [ ] Private vulnerability reporting: on (already referenced from
-      `SECURITY.md`; confirm the toggle itself is enabled)
-- [ ] Dependabot alerts + security updates: on
-- [ ] Expand `ci.yml` from a single job to a real Python version matrix
-      (private-repo Actions minutes are metered; public repos on the free
-      tier get much more headroom)
-- [ ] Social preview image set (Settings → General → Social preview)
+- [x] Repo visibility: private → public — done 2026-08-30
+- [x] Secret scanning: on
+- [x] Push protection: on
+- [x] CodeQL default setup: on (`state: configured`; the initial scan run
+      was still populating `languages` at check time — expected, not a
+      problem, it fills in after the first scan completes)
+- [x] Private vulnerability reporting: on
+- [x] Dependabot alerts + security updates: on
+- [x] Expand `ci.yml` from a single job to a real Python version matrix
+      (3.12, 3.13)
+- [ ] Social preview image set (Settings → General → Social preview) —
+      Step 6, not done yet
+- [x] Confirmed no secrets, API responses, or internal notes in commit
+      history — grepped the full history for key/token/write-key patterns
+      and `.env` additions during Prompt 5 Step 1; every fixture ID is
+      synthetic since no live workspace was ever used
 - [ ] Confirm `LICENSE`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `CONTRIBUTING.md`
-      all read correctly as public-facing docs, not written assuming a
-      private, single-maintainer context
+      all read correctly as public-facing docs — not re-verified this pass,
+      worth a human read-through
 - [ ] Branch protection on `main`: require PR review, require the CI status
-      check, disallow force-push
-- [ ] Confirm no secrets, API responses, or internal notes ended up in commit
-      history while the repo was private (a private repo is not a good place
-      to be sloppy about this, but double-check before it's public)
+      check, disallow force-push — not done; Step 3 of Prompt 5 didn't list
+      this explicitly and it changes how pushes to `main` work going
+      forward, so it's flagged here rather than silently applied
 
 ## At release time (v0.1.0)
 

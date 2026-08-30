@@ -5,6 +5,9 @@ behavior — see tests/tools/ for that.
 
 from __future__ import annotations
 
+import subprocess
+import sys
+
 import pytest
 from mcp.types import CallToolResult
 
@@ -286,3 +289,53 @@ async def test_startup_check_succeeds_when_token_and_region_are_valid(
         await server.run_startup_checks()  # must not raise
     finally:
         server._client = None  # pyright: ignore[reportPrivateUsage]
+
+
+# --------------------------------------------------------------------------
+# `segment-mcp --help` / `--version` must not require configuration
+# (ENG-3b) — main() used to ignore sys.argv entirely and run the fatal
+# startup checks unconditionally, so `--help` died with a config error
+# instead of printing usage. Both flags must exit 0 with NO
+# SEGMENT_API_TOKEN/SEGMENT_REGION set and without making any network call.
+# --------------------------------------------------------------------------
+
+
+def _run_cli(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(  # noqa: S603
+        [sys.executable, "-m", "segment_mcp.server", *args],
+        env={},  # deliberately empty — no token, no region, no PATH
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+
+def test_help_exits_zero_with_no_configuration_and_names_the_tool() -> None:
+    result = _run_cli("--help")
+    assert result.returncode == 0
+    assert "segment-mcp" in result.stdout.lower()
+
+
+def test_version_exits_zero_with_no_configuration() -> None:
+    result = _run_cli("--version")
+    assert result.returncode == 0
+    assert result.stdout.strip()
+
+
+def test_arg_parser_help_exits_zero_without_touching_the_environment(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # In-process complement to the subprocess tests above: proves the
+    # parser itself exits 0 on --help before anything in main() that
+    # would need SEGMENT_API_TOKEN/SEGMENT_REGION runs.
+    with pytest.raises(SystemExit) as exc_info:
+        server._build_arg_parser().parse_args(["--help"])  # pyright: ignore[reportPrivateUsage]
+    assert exc_info.value.code == 0
+    assert "segment-mcp" in capsys.readouterr().out.lower()
+
+
+def test_arg_parser_version_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        server._build_arg_parser().parse_args(["--version"])  # pyright: ignore[reportPrivateUsage]
+    assert exc_info.value.code == 0
+    assert capsys.readouterr().out.strip()

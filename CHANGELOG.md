@@ -41,6 +41,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now logged as `id_type=email key_sha256=<16-hex-char digest>`, keeping
   lookups correlatable across log lines for auditing without putting a
   reversible PII value in application logs.
+- `segment-mcp --help` and `segment-mcp --version` now exit 0 without
+  requiring `SEGMENT_API_TOKEN`/`SEGMENT_REGION` or making any network
+  call — previously `main()` ran the fatal startup checks unconditionally
+  and ignored `sys.argv` entirely, so the first thing anyone typed after
+  installing died with a config error.
 
 ## 0.1.1 - 2026-08-30
 

@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.1.1 - 2026-08-30
+
+### Added
+
+- `server.json`: the MCP Registry manifest for `io.github.katekruger/segment-mcp`,
+  describing the PyPI package and its environment variables.
+- `<!-- mcp-name: io.github.katekruger/segment-mcp -->` marker in
+  README.md, required by the MCP Registry's PyPI ownership check (it
+  reads this from the *published* package README, which is why this is a
+  patch release rather than a retrofit onto 0.1.0 — the check reads
+  whatever's live on PyPI, and 0.1.0 shipped without it).
+- `release.yml`: `publish-mcp-registry` job, running after the PyPI
+  publish, authenticating via GitHub OIDC (no token, same Trusted-Publishing
+  posture as the PyPI job) and re-stamping `server.json`'s version from
+  the release tag before publishing — so every future tagged release
+  re-publishes to the MCP Registry automatically, not just this one.
+
 ## 0.1.0 - 2026-08-30
 
 ### Changed

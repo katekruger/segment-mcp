@@ -1,5 +1,7 @@
 # segment-mcp
 
+<!-- mcp-name: io.github.katekruger/segment-mcp -->
+
 [![CI](https://github.com/katekruger/segment-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/katekruger/segment-mcp/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/segment-mcp.svg)](https://pypi.org/project/segment-mcp/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)

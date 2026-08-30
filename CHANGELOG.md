@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.1.0 - 2026-08-30
+
 ### Added
 
 - `server.py`: fatal startup checks (`run_startup_checks()`) — region set

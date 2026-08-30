@@ -34,6 +34,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cases proving `POST /sources` and a legitimate `/regulations-adjacent`
   path are not caught by the boundary check. See ADR 0004.
 
+### Fixed
+
+- Profile API lookups (`client/profile_api.py`) no longer log the raw
+  identifier at INFO level — `email:jane@example.com`-shaped values are
+  now logged as `id_type=email key_sha256=<16-hex-char digest>`, keeping
+  lookups correlatable across log lines for auditing without putting a
+  reversible PII value in application logs.
+
 ## 0.1.1 - 2026-08-30
 
 ### Added

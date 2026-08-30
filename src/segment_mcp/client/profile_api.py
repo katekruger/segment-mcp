@@ -13,10 +13,16 @@ read in the whole surface. Accordingly:
 
 - It is only ever constructed with a **separate credential**
   (`SEGMENT_PROFILE_TOKEN`), never the main `SEGMENT_API_TOKEN`.
-- Every lookup is logged (collection, normalized key, route, and the
-  caller-supplied `requested_by` label) via the `segment_mcp.profile_api`
-  logger, before the request is sent — so a lookup is on record even if
-  the call then fails.
+- Every lookup is logged (collection, id_type, a truncated SHA-256 digest
+  of the normalized key, route, and the caller-supplied `requested_by`
+  label) via the `segment_mcp.profile_api` logger, before the request is
+  sent — so a lookup is on record even if the call then fails. The digest
+  is logged, never the raw identifier: a Profile API client logging
+  `email:jane@example.com` in plaintext at INFO is a GDPR/CCPA liability,
+  and application logs frequently outlive the CRM's own retention policy.
+  The digest is still stable per identifier, so lookups of the same
+  profile remain correlatable across log lines for auditing — it just
+  can't be reversed back to an email.
 - Whether this client is ever constructed at all is an explicit opt-in
   decision made by whatever wires a profile tool into `server.py`: absent
   `SEGMENT_PROFILE_TOKEN`, no such tool should be registered. See
@@ -32,6 +38,7 @@ returned nothing.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import logging
 from typing import Any, Literal, cast
@@ -167,12 +174,20 @@ class ProfileAPIClient:
         normalized_value = self._normalize_id(id_type, id_value)
         lookup_key = f"{id_type}:{normalized_value}"
         # Logged before the request is sent — a lookup is on record even
-        # if the call itself then fails or times out.
+        # if the call itself then fails or times out. key_sha256 is a
+        # digest of lookup_key, never the raw identifier — see the module
+        # docstring. Truncated to 16 hex chars: enough to make an
+        # accidental collision between two different real identifiers
+        # vanishingly unlikely for audit-correlation purposes, short
+        # enough to keep log lines readable.
+        key_digest = hashlib.sha256(lookup_key.encode()).hexdigest()[:16]
         logger.info(
-            "Profile lookup: space=%s collection=%s key=%s route=%s requested_by=%s",
+            "Profile lookup: space=%s collection=%s id_type=%s "
+            "key_sha256=%s route=%s requested_by=%s",
             self._space_id,
             collection,
-            lookup_key,
+            id_type,
+            key_digest,
             route,
             requested_by,
         )

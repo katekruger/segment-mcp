@@ -129,9 +129,14 @@ off from everything else:
 - **Explicit opt-in.** If `SEGMENT_PROFILE_TOKEN` is unset, no profile
   tool is registered — the capability doesn't exist for that server
   instance.
-- **Every lookup is logged** — collection, the normalized lookup key, and
-  the caller — before the request is even sent, via
-  `client/profile_api.py`'s `segment_mcp.profile_api` logger.
+- **Every lookup is logged** — collection, id_type, and the caller —
+  before the request is even sent, via `client/profile_api.py`'s
+  `segment_mcp.profile_api` logger. The log records *that* a lookup
+  happened and *which* profile, as a truncated SHA-256 digest of the
+  lookup key, never the raw identifier — an email address never appears
+  in application logs, and the digest cannot be reversed back to one, but
+  repeated lookups of the same profile are still correlatable across log
+  lines for auditing.
 - **Lookups are case-sensitive.** The wrong case returns an empty result,
   not an error — this client lowercases every lookup value at its
   boundary and logs a warning when it had to.

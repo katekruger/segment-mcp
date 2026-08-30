@@ -4,7 +4,10 @@ name: Release
 # package version -> verify CHANGELOG.md has a section for it -> run the
 # full CI suite -> build -> publish to PyPI via Trusted Publishing (OIDC,
 # no API token secret anywhere) into an environment that requires manual
-# approval -> create the GitHub Release from the CHANGELOG section.
+# approval -> create the GitHub Release from the CHANGELOG section, and
+# separately, once PyPI publish is approved, publish to the MCP Registry
+# behind its own manual-approval gate (a distinct environment from PyPI's,
+# so the two can be approved independently).
 #
 # Set up the PyPI Trusted Publisher BEFORE pushing the first tag -- PyPI
 # needs to already trust this repo/workflow/environment combination, or the
@@ -114,7 +117,19 @@ jobs:
     # PyPI ownership check reads the mcp-name marker from the package's
     # *published* README, so the package must already be live on PyPI
     # before this can succeed.
+    #
+    # Gated behind its own environment, separate from `release` (which
+    # only gates PyPI). Before this, publish-mcp-registry had no gate of
+    # its own and auto-ran the moment PyPI publish succeeded, with no
+    # window to decide "PyPI now, registry later" for a given tag — and
+    # v0.1.1 shipped a registry-breaking bug (server.json's description
+    # over the 100-char limit) that only surfaced *after* PyPI had already
+    # published, leaving that release partially out. A separate approval
+    # gate means a bad registry publish can be caught and fixed (as it
+    # was for v0.1.2) without re-publishing to PyPI.
     needs: publish
+    environment:
+      name: mcp-registry-release
     runs-on: ubuntu-latest
     permissions:
       id-token: write # required for MCP Registry GitHub-OIDC auth; no token anywhere

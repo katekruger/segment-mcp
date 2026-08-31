@@ -236,3 +236,52 @@ two deep) rather than only listing them, asserting every generated
 variant that an independent resolution check says lands on `/regulations`
 is still refused. The three original negative cases
 (`POST /sources`, `POST /regulations-adjacent`) still pass unchanged.
+
+## Addendum (31 Aug 2026): decode-then-normalize was not the only downstream model
+
+A third external audit (a 1,164-variant fuzz run against HEAD) found the
+second addendum's "pessimistic case" was itself not pessimistic enough. It
+modeled exactly one downstream behaviour — decode fully, then normalize
+`.`/`..` segments — and missed a different, equally common one: decode
+fully, then prefix-*route* directly against the decoded path, without
+normalizing. That's how nginx `location /regulations` and most API
+gateways actually route: `POST /regulations%2f..` decodes to
+`/regulations/..`, and a decode-then-route gateway matches that against
+the `/regulations` prefix and sends it to the handler — while
+`_normalize_path_segments` collapses that same decoded path to `/` first,
+which is why the guard's normalize-then-compare check let all 14 variants
+in this family through. The guard's own pessimism ran one way only: it
+refused `/%2e%2e/regulations` (dangerous only if the edge normalizes)
+while allowing `/regulations%2f..` (dangerous only if the edge does
+*not* normalize) — the same threat model, opposite outcomes, which is
+exactly the kind of asymmetry a "model the pessimistic case" guard exists
+to avoid.
+
+### Third decision outcome
+
+`_refuse_if_tier1_mutation` now checks the blocked-prefix comparison
+against **both** the decoded-but-not-normalized path and the
+decoded-and-normalized path, refusing if either one matches. This costs
+one extra comparison, not a new resolution step — `_decode_fully` and
+`_normalize_path_segments` are unchanged; the fix is in how their outputs
+get compared, not in a new model of resolution. Confirmed by 14 new
+entries in `TIER1_BYPASS_PATHS` covering the trailing-`%2f..` family
+(case variants, a `/foo/../` composition, a fragment, a query, an
+absolute-URL form, a trailing slash, a sub-path, a trailing encoded slash,
+and a fully percent-encoded `..`), and by a new
+`"append %2f.."` entry in `_COMPOSITION_TRANSFORMS`, so the existing
+generative fuzz test (`test_every_composed_bypass_that_resolves_to_regulations_is_refused`)
+now generates this family too instead of relying only on a hand-maintained
+list — which is how the first two audits' fixes held against everything
+someone had already thought to write down, and nothing else.
+
+### Confirmation (second addendum)
+
+`tests/test_tier1_unreachable.py`'s `_resolves_to_regulations` helper (the
+independent oracle the generative fuzz test checks against) is updated to
+match: a variant is "should be blocked" if *either* its decoded-but-not-
+normalized path or its decoded-and-normalized path matches the
+`/regulations` prefix, mirroring the guard's own dual check. Updating only
+the guard and leaving the oracle modeling the old, narrower rule would
+have let the fuzz test keep passing while asserting nothing about this
+family — the same failure mode that let the first fix through unnoticed.

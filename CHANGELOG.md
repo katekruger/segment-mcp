@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **The Tier 1 client guard's `base_url.join()`-based resolution wasn't
+  actually the resolution httpx uses, and didn't decode percent-encoded
+  dot-segments (CLOSE-2, high severity, latent).** A second external
+  audit found `httpx.AsyncClient.request()` resolves a relative path with
+  its own `_merge_url`, not `URL.join()` — the two disagree on a leading
+  `//`, where `join()` models a different host while the real client
+  strips it and sends to the base host's root (harmless as reported, but
+  the guard's model of where the request was going was simply wrong).
+  Separately, neither resolver percent-decodes before comparing, so
+  `/%2e%2e/regulations` resolved to the literal path
+  `/%2e%2e/regulations`, not `/regulations` — whether Segment's own edge
+  decodes-then-normalizes before routing (common at CDN/gateway layers)
+  isn't verifiable from outside, so the guard now assumes the pessimistic
+  case. `_refuse_if_tier1_mutation` now refuses any `//`-prefixed path
+  outright (this client never legitimately constructs one), resolves
+  everything else with the client's own `build_request()` instead of a
+  parallel reimplementation, and percent-decodes to a fixed point plus
+  re-normalizes dot-segments/repeated-slashes before comparing.
+  `tests/test_tier1_unreachable.py` adds the percent-encoded-dot-segment
+  family to `TIER1_BYPASS_PATHS`, a test asserting the guard's resolved
+  URL equals what a real transport receives for every bypass path, and a
+  property test that generates bypass compositions instead of only
+  listing them. See ADR 0004's addendum.
+
 - **`client/profile_api.py` had the exact ENG-1 path-traversal bug,
   unfixed, in a second file (CLOSE-1, high severity, latent).** Latent
   only because `tools/profiles.py` is a docstring-only stub, so

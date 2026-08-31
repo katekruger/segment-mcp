@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **The Tier 1 client guard's decode-then-normalize model missed a
+  decode-then-*route*-without-normalizing downstream behaviour, letting a
+  trailing `%2f..` family through (CLOSE3-1, high severity, latent).** A
+  1,164-variant fuzz run found 14 misses, all one root cause:
+  `POST /regulations%2f..` decodes to `/regulations/..`, which
+  `_normalize_path_segments` collapses to `/` — not blocked — but a
+  decode-then-prefix-route gateway (nginx `location /regulations`-style
+  routing, which never collapses `.`/`..` segments before matching)
+  routes the un-normalized decoded path straight to the `/regulations`
+  handler. The guard's pessimism ran one way only: it refused
+  `/%2e%2e/regulations` (dangerous only if the edge normalizes) while
+  allowing `/regulations%2f..` (dangerous only if it doesn't) — same
+  threat model, opposite outcomes. `_refuse_if_tier1_mutation` now
+  checks the blocked-prefix comparison against both the decoded-but-not-
+  normalized path and the decoded-and-normalized path, refusing if
+  either matches. `tests/test_tier1_unreachable.py` adds the 14-variant
+  family to `TIER1_BYPASS_PATHS` and an `"append %2f.."` composition
+  transform so the existing generative fuzz test covers this family
+  going forward instead of only the strings someone already wrote down.
+  See ADR 0004's second addendum.
+
 - **A second log line in `client/profile_api.py` printed the raw
   identifier in plaintext (CLOSE-3, high severity — PII).** The
   case-normalization warning logged both the raw and lowercased lookup

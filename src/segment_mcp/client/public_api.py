@@ -209,10 +209,19 @@ def _refuse_if_tier1_mutation(method: str, path: str, *, client: httpx.AsyncClie
       depends on whether Segment's edge decodes-then-normalizes before
       routing, which is common at CDN/gateway layers and not something
       this client can verify from outside. `_decode_fully` plus
-      `_normalize_path_segments` model that decode-then-normalize
-      pessimistically, so this guard blocks anything that *could* resolve
-      to `/regulations` downstream, not just what httpx already collapses
-      before sending.
+      `_normalize_path_segments` model that decode-then-normalize.
+    - A third external audit (31 Aug 2026) found decode-then-normalize was
+      only *one* of the downstream behaviours this needs to model, not
+      the only one: a decode-then-prefix-*route* gateway (nginx
+      `location /regulations`-style routing, which matches on the
+      decoded path directly and never collapses `.`/`..` segments before
+      doing so) routes `/regulations%2f..` — decoded to
+      `/regulations/..` — to the `/regulations` handler, even though
+      normalizing that same decoded path collapses it to `/` and would
+      wrongly clear it. This guard checks the decoded path against the
+      blocked prefix both before and after normalizing, so it blocks
+      anything that could resolve to `/regulations` under either
+      downstream model, not just the one that happens to normalize away.
 
     See docs/decisions/0004-tier1-guard-matches-resolved-url.md.
     """
@@ -236,16 +245,27 @@ def _refuse_if_tier1_mutation(method: str, path: str, *, client: httpx.AsyncClie
         )
     resolved_path = client.build_request(method, path).url.path
     decoded_path = _decode_fully(resolved_path)
-    normalized_path = _normalize_path_segments(decoded_path).rstrip("/").casefold()
+    normalized_path = _normalize_path_segments(decoded_path)
     blocked_prefix = _TIER1_BLOCKED_PATH_PREFIX.casefold()
-    if normalized_path == blocked_prefix or normalized_path.startswith(blocked_prefix + "/"):
-        raise Tier1BlockedError(
-            f"Refused: {method.upper()} {path} is a Tier 1 action "
-            "(regulation/deletion creation) and is permanently unreachable "
-            "through this client, in every mode. See "
-            "docs/decisions/0002-tier-1-permanently-unreachable.md.",
-            status_code=None,
-        )
+    # Checked against both the un-normalized decoded path and the
+    # normalized one: a decode-then-prefix-route gateway (nginx
+    # `location /regulations`-style) never collapses `.`/`..` segments
+    # before matching, so `/regulations%2f..` decodes to `/regulations/..`
+    # and routes to the /regulations handler there, even though a
+    # decode-then-*normalize* gateway would collapse that same decoded
+    # path to `/` first. The guard has no way to know which behaviour
+    # sits downstream, so it refuses anything that could resolve to
+    # `/regulations` under either model.
+    for candidate in (decoded_path, normalized_path):
+        folded = candidate.rstrip("/").casefold()
+        if folded == blocked_prefix or folded.startswith(blocked_prefix + "/"):
+            raise Tier1BlockedError(
+                f"Refused: {method.upper()} {path} is a Tier 1 action "
+                "(regulation/deletion creation) and is permanently unreachable "
+                "through this client, in every mode. See "
+                "docs/decisions/0002-tier-1-permanently-unreachable.md.",
+                status_code=None,
+            )
 
 
 # --------------------------------------------------------------------------

@@ -105,6 +105,27 @@ TIER1_BYPASS_PATHS = [
     "/%2e%2e/regulations?x=1",
     "/%2e%2e/regulations/sources/s1",
     "/%2e%2e/regulations/",
+    # Third audit's trailing-%2f.. family: decode-then-normalize collapses
+    # "/regulations/.." to "/" (not blocked), but decode-then-prefix-route
+    # *without* normalizing — how nginx `location /regulations` and most
+    # API gateways behave — routes the un-normalized decoded path to the
+    # /regulations handler. The guard must refuse whichever model is
+    # pessimistic, not just the one httpx's own normalization happens to
+    # collapse. See docs/decisions/0004-tier1-guard-matches-resolved-url.md.
+    "/regulations%2f..",
+    "/REGULATIONS%2F..",
+    "regulations%2f..",
+    "/./regulations%2f..",
+    "/foo/../regulations%2f..",
+    "/regulations%2f..#frag",
+    "/regulations%2f..?x=1",
+    "/Regulations%2f..",
+    "https://api.segmentapis.com/regulations%2f..",
+    "/regulations%2F..",
+    "/regulations%2f../",
+    "/regulations%2f../sources/s1",
+    "/regulations%2f..%2f",
+    "/regulations%2f%2e%2e",
 ]
 
 # `//regulations` resolves to the base host's root, not to `/regulations`
@@ -206,6 +227,7 @@ _COMPOSITION_TRANSFORMS: list[tuple[str, Callable[[str], str]]] = [
     ("drop leading slash", lambda p: p.lstrip("/")),
     ("append fragment", lambda p: p + "#frag"),
     ("append query", lambda p: p + "?x=1"),
+    ("append %2f..", lambda p: p + "%2f.."),
 ]
 
 
@@ -230,20 +252,33 @@ def _compose_bypass_variants(base: str, *, max_depth: int = 2) -> list[str]:
     return variants
 
 
+def _matches_regulations_prefix(candidate: str) -> bool:
+    folded = candidate.rstrip("/").casefold()
+    return folded == "/regulations" or folded.startswith("/regulations/")
+
+
 def _resolves_to_regulations(client: SegmentPublicAPIClient, path: str) -> bool:
     """Independent re-implementation of the guard's own resolution, used
     only to decide which generated variants *should* be blocked — kept
     deliberately identical in spirit to, but a separate call path from,
     the guard under test, the same way the guard itself now matches
-    httpx's `build_request` instead of reimplementing resolution."""
+    httpx's `build_request` instead of reimplementing resolution.
+
+    Models *both* downstream behaviours a real edge/gateway might apply
+    to the decoded path: routing on the un-normalized decoded path
+    directly (nginx `location /regulations`-style prefix routing) and
+    routing after collapsing `.`/`..` segments (a decode-then-normalize
+    gateway). A path only has to be dangerous under one of the two for
+    the guard to be required to refuse it — see the trailing-%2f..
+    family in TIER1_BYPASS_PATHS above."""
     if path.startswith("//"):
         return True  # refused defensively regardless of resolution
     resolved_path = client._client.build_request(  # pyright: ignore[reportPrivateUsage]
         "POST", path
     ).url.path
     decoded = _decode_fully(resolved_path)
-    normalized = _normalize_path_segments(decoded).rstrip("/").casefold()
-    return normalized == "/regulations" or normalized.startswith("/regulations/")
+    normalized = _normalize_path_segments(decoded)
+    return _matches_regulations_prefix(decoded) or _matches_regulations_prefix(normalized)
 
 
 async def test_every_composed_bypass_that_resolves_to_regulations_is_refused() -> None:

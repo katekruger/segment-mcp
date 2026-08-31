@@ -164,6 +164,29 @@ async def test_normalization_warning_never_contains_the_raw_or_normalized_value(
             assert leaked not in record.message, f"{leaked!r} leaked in log: {record.message!r}"
 
 
+async def test_httpx_logger_never_leaks_the_raw_identifier_via_the_request_url(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # CLOSE3-2: this client's own logging is correctly digest-only, but
+    # `httpx` logs the full request URL at INFO from inside
+    # `Client._send_single_request` — and the Profile API puts the
+    # identifier in the URL path (`.../profiles/email:jane@example.com/
+    # traits`). A caller who does `logging.basicConfig(level=INFO)` — the
+    # exact setup this module's docstring says is needed to capture the
+    # audit trail — would see the raw email in plaintext via the `httpx`
+    # logger, even though every assertion above is scoped to
+    # `segment_mcp.profile_api` and would never catch it. Capture at the
+    # root logger, not scoped to any one logger name, so this actually
+    # exercises the same surface a real deployment's logging config sees.
+    async with make_client("us/profile/traits_200.json") as client:
+        with caplog.at_level(logging.DEBUG):
+            await client.get_traits("users", "email", "Jane.Doe@Example.com")
+
+    log_text = "\n".join(f"{r.name}: {r.message}" for r in caplog.records)
+    for leaked in ("Jane.Doe@Example.com", "jane.doe@example.com", "Jane.Doe", "Example.com"):
+        assert leaked not in log_text, f"{leaked!r} leaked in logs: {log_text!r}"
+
+
 async def test_404_error_never_contains_the_raw_identifier(
     caplog: pytest.LogCaptureFixture,
 ) -> None:

@@ -30,6 +30,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   going forward instead of only the strings someone already wrote down.
   See ADR 0004's second addendum.
 
+- **`httpx` logged the raw Profile API identifier at INFO, undermining
+  this module's own digest-only logging (CLOSE3-2, high severity —
+  PII).** `httpx.Client._send_single_request` logs the full request URL
+  at INFO from inside its own send path, regardless of transport — and
+  the Profile API puts the lookup identifier in the URL path
+  (`.../profiles/email:jane.doe@example.com/traits`), so a plain
+  `logging.basicConfig(level=logging.INFO)` — exactly what this module's
+  docstring says a deployment needs to capture the audit trail — printed
+  the raw address via the `httpx` logger even though every log line this
+  client itself emits is digest-only. No existing test caught it because
+  every assertion was scoped to `logger="segment_mcp.profile_api"`.
+  `ProfileAPIClient.__init__` now sets the `httpx` logger to `WARNING`
+  (not at import, so importing the package doesn't silently reconfigure
+  an application's logging) — a process-wide trade-off, since keeping the
+  identifier out of the URL isn't available: Segment's API puts it there.
+  `tests/client/test_profile_api.py` adds a test scoped to the root
+  logger (not just `segment_mcp.profile_api`) asserting no record from
+  any logger contains the raw identifier. README.md's Profile API section
+  is reworded from "an email address never appears in application
+  logs" (a guarantee about a whole process's logging configuration a
+  library can't really make) to what this client can actually promise:
+  it never logs the raw identifier itself, and it silences `httpx`'s
+  request-URL log so the URL doesn't leak it either.
+
 - **A second log line in `client/profile_api.py` printed the raw
   identifier in plaintext (CLOSE-3, high severity — PII).** The
   case-normalization warning logged both the raw and lowercased lookup

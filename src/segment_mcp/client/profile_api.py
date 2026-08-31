@@ -142,6 +142,22 @@ class ProfileAPIClient:
         # Validated once, at construction, so a bad space ID fails fast
         # here rather than silently on every subsequent lookup.
         self._space_id = validate_resource_id(space_id, kind="space_id")
+        # httpx's own `Client._send_single_request` logs the full request
+        # URL at INFO regardless of transport — and the Profile API puts
+        # the identifier in the path (`.../profiles/email:jane@example.com
+        # /traits`), so a plain `logging.basicConfig(level=INFO)` (exactly
+        # what this module's docstring says a deployment needs to capture
+        # the audit trail below) would print the raw identifier via the
+        # `httpx` logger even though this client's own logging never does.
+        # Silenced here, at construction, rather than at import, so
+        # importing this package doesn't silently reconfigure an
+        # application's logging before it's ever asked to look up a
+        # profile. Trade-off: this suppresses httpx's request log
+        # process-wide (any other client sharing the `httpx` logger loses
+        # its INFO-level request log too), which is a real cost — but the
+        # alternative, keeping the identifier out of the URL, isn't
+        # available, because Segment's Profile API puts it there.
+        logging.getLogger("httpx").setLevel(logging.WARNING)
         credentials = base64.b64encode(f"{token}:".encode()).decode("ascii")
         self._client = httpx.AsyncClient(
             base_url=base_url or endpoints_for(region).profile_api,

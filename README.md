@@ -133,10 +133,12 @@ off from everything else:
   before the request is even sent, via `client/profile_api.py`'s
   `segment_mcp.profile_api` logger. The log records *that* a lookup
   happened and *which* profile, as a truncated SHA-256 digest of the
-  lookup key, never the raw identifier — an email address never appears
-  in application logs, and the digest cannot be reversed back to one, but
-  repeated lookups of the same profile are still correlatable across log
-  lines for auditing.
+  lookup key, never the raw identifier — this client never logs the raw
+  identifier itself, and it silences `httpx`'s own request-URL log
+  process-wide at construction so the identifier doesn't leak that way
+  either, since the Profile API puts it in the URL path. The digest
+  cannot be reversed back to the identifier, but repeated lookups of the
+  same profile are still correlatable across log lines for auditing.
 - **Lookups are case-sensitive.** The wrong case returns an empty result,
   not an error — this client lowercases every lookup value at its
   boundary and logs a warning when it had to.

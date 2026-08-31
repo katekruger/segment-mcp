@@ -10,24 +10,40 @@ Three independent checks, any one of which failing is a critical bug:
 2. The client itself refuses to send the request, in every mode.
 3. No registered tool definition references `/regulations` at all.
 
-Check 2 is parametrized over ten confirmed bypass strings — three that a
-naive `path.split("?", 1)[0]` string-prefix check already caught, and
-seven an external audit found it missed (a `#fragment` it didn't strip, a
-`.`/`..`-segment it didn't normalize, a missing leading slash, an absolute
-URL, and case variation) — across all four non-GET methods, per
+Check 2 is parametrized over the bypass strings a first audit found (three
+that a naive `path.split("?", 1)[0]` string-prefix check already caught,
+seven a `base_url.join()`-based rewrite closed — a `#fragment`, a
+`.`/`..`-segment, a missing leading slash, an absolute URL, and case
+variation) plus a second audit's percent-encoded-dot-segment family
+(`/%2e%2e/regulations` and friends) — across all four non-GET methods, per
 docs/decisions/0004-tier1-guard-matches-resolved-url.md. Never relax this
-back down to the original three strings or to a single method: the whole
-point of this rewrite is that the narrow version passed while the guard
-was still bypassable.
+back down to a smaller list or to a single method: the whole point of each
+rewrite is that the previous, narrower version passed while the guard was
+still bypassable.
+
+`//regulations` is deliberately *not* in that "must raise" list — verified
+against `httpx.AsyncClient.build_request`, it resolves to the base host's
+*root* (`/`), not to `/regulations`, so asserting `Tier1BlockedError` for
+it would assert something false about where it actually goes. It has its
+own dedicated test below instead, proving the guard refuses it anyway
+(defensively, as a protocol-relative reference this client never
+legitimately constructs) without claiming a resolution that isn't real.
 """
 
 from __future__ import annotations
+
+from collections.abc import Callable
 
 import httpx
 import pytest
 
 from segment_mcp import server
-from segment_mcp.client.public_api import SegmentPublicAPIClient, Tier1BlockedError
+from segment_mcp.client.public_api import (
+    SegmentPublicAPIClient,
+    Tier1BlockedError,
+    _decode_fully,  # pyright: ignore[reportPrivateUsage]
+    _normalize_path_segments,  # pyright: ignore[reportPrivateUsage]
+)
 from segment_mcp.client.regions import Region
 from segment_mcp.modes import Mode, Tier, Tier1UnreachableError, authorize
 
@@ -60,12 +76,17 @@ def test_authorize_refuses_tier1_even_with_every_confirmation_supplied() -> None
 # --------------------------------------------------------------------------
 
 # The three strings the original (string-prefix) guard already caught,
-# plus the seven the audit confirmed it missed. All ten must be refused
-# for every non-GET method — see the module docstring.
+# the seven the first audit confirmed it missed, and the second audit's
+# percent-encoded-dot-segment family (including one composed with an
+# encoded slash, and one with a trailing slash) — all of which must be
+# refused for every non-GET method. See the module docstring for why
+# `//regulations` is a separate list.
 TIER1_BYPASS_PATHS = [
+    # Original three.
     "/regulations",
     "/regulations/sources/src_1",
     "/regulations/cloudsources/src_1",
+    # First audit's seven.
     "/regulations#frag",
     "/./regulations",
     "/foo/../regulations",
@@ -73,7 +94,26 @@ TIER1_BYPASS_PATHS = [
     "https://api.segmentapis.com/regulations",
     "/REGULATIONS",
     "/Regulations",
+    # Second audit's percent-encoded-dot-segment family.
+    "/%2e%2e/regulations",
+    "/%2e/regulations",
+    "/%2E%2E/regulations",
+    "/..%2fregulations",
+    "/%2f/regulations",
+    "/./%2e%2e/regulations",
+    "/%2e%2e/REGULATIONS",
+    "/%2e%2e/regulations?x=1",
+    "/%2e%2e/regulations/sources/s1",
+    "/%2e%2e/regulations/",
 ]
+
+# `//regulations` resolves to the base host's root, not to `/regulations`
+# (verified against `build_request`) — refused defensively by the
+# leading-`//` check, not by the prefix comparison the paths above go
+# through. Kept separate so the equality test below (which proves the
+# guard's *resolved* path matches the transport's) isn't asked to assert
+# an equality that would be false for this one.
+DOUBLE_SLASH_BYPASS_PATH = "//regulations"
 
 NON_GET_METHODS = ["POST", "PUT", "PATCH", "DELETE"]
 
@@ -99,6 +139,129 @@ async def test_client_refuses_every_bypass_form_against_eu_base_url_too(method: 
     async with client:
         with pytest.raises(Tier1BlockedError):
             await client._request(method, "/regulations")  # pyright: ignore[reportPrivateUsage]
+
+
+@pytest.mark.parametrize("method", NON_GET_METHODS)
+async def test_client_refuses_double_slash_bypass_defensively(method: str) -> None:
+    # See DOUBLE_SLASH_BYPASS_PATH's definition above: this doesn't
+    # actually resolve to /regulations (it resolves to the base host's
+    # root), so it's refused by the dedicated protocol-relative-path
+    # check, not the prefix comparison — but it must still raise.
+    client = SegmentPublicAPIClient("fake-token", Region.US)
+    async with client:
+        with pytest.raises(Tier1BlockedError):
+            await client._request(  # pyright: ignore[reportPrivateUsage]
+                method, DOUBLE_SLASH_BYPASS_PATH
+            )
+
+
+# --------------------------------------------------------------------------
+# Gap B, closed: the guard used to resolve URLs differently than the
+# transport (`base_url.join()` vs. what `AsyncClient` actually sends),
+# which is how `//regulations` — and, worse, a `//host/path` form —
+# could pass the guard's reasoning while landing somewhere the guard
+# never considered. Prove the two now agree, for every bypass string,
+# not just spot-check one.
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("path", TIER1_BYPASS_PATHS)
+async def test_guard_resolved_path_matches_the_transports_actual_path(path: str) -> None:
+    # URL resolution (base_url + path -> final URL) doesn't depend on the
+    # HTTP method, only on the path — so a GET to the same path (which
+    # the guard doesn't intercept) reaches the real transport and lets us
+    # capture the URL httpx actually sends, to compare against what the
+    # guard computes for the *blocked* method it would never let through.
+    # This is the test Gap B's fix promises: the guard isn't just
+    # "probably right" about what will be sent, it's checked against it.
+    captured: dict[str, httpx.URL] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = request.url
+        return httpx.Response(200, json={"data": {}})
+
+    client = SegmentPublicAPIClient("fake-token", Region.US, transport=httpx.MockTransport(handler))
+    async with client:
+        await client.get(path)
+        guard_resolved_url = client._client.build_request(  # pyright: ignore[reportPrivateUsage]
+            "POST", path
+        ).url
+        assert guard_resolved_url == captured["url"]
+
+
+# --------------------------------------------------------------------------
+# Gap C, closed: the old bypass list was exactly the set of strings a
+# previous audit happened to report — it proved the last fix held, not
+# that the next one didn't exist. This generates bypass compositions
+# instead of only listing them, by composing the transformations that
+# caused each historical bypass, and asserts every composition that
+# resolves to /regulations is still refused.
+# --------------------------------------------------------------------------
+
+_COMPOSITION_TRANSFORMS: list[tuple[str, Callable[[str], str]]] = [
+    ("prepend /./", lambda p: "/." + p),
+    ("wrap in /foo/../", lambda p: "/foo/.." + p),
+    ("percent-encode first char", lambda p: f"/%{ord(p[1]):02x}{p[2:]}" if len(p) > 1 else p),
+    ("uppercase", lambda p: p.upper()),
+    ("drop leading slash", lambda p: p.lstrip("/")),
+    ("append fragment", lambda p: p + "#frag"),
+    ("append query", lambda p: p + "?x=1"),
+]
+
+
+def _compose_bypass_variants(base: str, *, max_depth: int = 2) -> list[str]:
+    """All compositions of `_COMPOSITION_TRANSFORMS`, up to `max_depth`
+    deep, applied to `base`. `max_depth=2` already gives 7 + 7*7 = 56
+    variants per base path — enough to catch a transform interacting
+    badly with another without exploding runtime."""
+    variants = [base]
+    frontier = [base]
+    for _ in range(max_depth):
+        next_frontier: list[str] = []
+        for path in frontier:
+            for _name, transform in _COMPOSITION_TRANSFORMS:
+                try:
+                    candidate = transform(path)
+                except (ValueError, IndexError):
+                    continue
+                next_frontier.append(candidate)
+        variants.extend(next_frontier)
+        frontier = next_frontier
+    return variants
+
+
+def _resolves_to_regulations(client: SegmentPublicAPIClient, path: str) -> bool:
+    """Independent re-implementation of the guard's own resolution, used
+    only to decide which generated variants *should* be blocked — kept
+    deliberately identical in spirit to, but a separate call path from,
+    the guard under test, the same way the guard itself now matches
+    httpx's `build_request` instead of reimplementing resolution."""
+    if path.startswith("//"):
+        return True  # refused defensively regardless of resolution
+    resolved_path = client._client.build_request(  # pyright: ignore[reportPrivateUsage]
+        "POST", path
+    ).url.path
+    decoded = _decode_fully(resolved_path)
+    normalized = _normalize_path_segments(decoded).rstrip("/").casefold()
+    return normalized == "/regulations" or normalized.startswith("/regulations/")
+
+
+async def test_every_composed_bypass_that_resolves_to_regulations_is_refused() -> None:
+    client = SegmentPublicAPIClient("fake-token", Region.US)
+    checked = 0
+    async with client:
+        for base in ["/regulations", "regulations"]:
+            for variant in _compose_bypass_variants(base):
+                if not _resolves_to_regulations(client, variant):
+                    continue
+                checked += 1
+                with pytest.raises(Tier1BlockedError):
+                    await client._request(  # pyright: ignore[reportPrivateUsage]
+                        "POST", variant
+                    )
+    # A regression here (checked == 0) would mean this test silently
+    # stopped exercising anything — fail loudly instead of passing empty.
+    assert checked > 0, "no composed variant resolved to /regulations — nothing was exercised"
 
 
 # --------------------------------------------------------------------------

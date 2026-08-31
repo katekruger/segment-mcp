@@ -46,11 +46,25 @@ from typing import Any, Literal, cast
 import httpx
 
 from segment_mcp.client.regions import Region, endpoints_for
+from segment_mcp.client.validation import (
+    InvalidResourceIdError,
+    validate_profile_lookup_value,
+    validate_resource_id,
+)
 
 logger = logging.getLogger("segment_mcp.profile_api")
 
 Collection = Literal["users", "accounts"]
 ProfileRoute = Literal["traits", "external_ids", "events", "metadata", "links"]
+
+# Runtime backstops for the two `Literal` types above. A `Literal`
+# annotation is static-only — it does nothing to stop a caller that
+# bypasses the type checker (or a future call site that forwards an
+# unvalidated string) from reaching `_get` with a value outside this set,
+# and `collection`/`route` are interpolated directly into the request path
+# below. See CLOSE-1 / docs/decisions/0003-refuse-path-traversal-in-resource-ids.md.
+_VALID_COLLECTIONS: frozenset[str] = frozenset(("users", "accounts"))
+_VALID_ROUTES: frozenset[str] = frozenset(("traits", "external_ids", "events", "metadata", "links"))
 
 # Per-route limits from BUILD-PLAN.md §4 / this prompt. `events` has no
 # client-settable limit — the API enforces a fixed 14-day window
@@ -125,7 +139,9 @@ class ProfileAPIClient:
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self.region = region
-        self._space_id = space_id
+        # Validated once, at construction, so a bad space ID fails fast
+        # here rather than silently on every subsequent lookup.
+        self._space_id = validate_resource_id(space_id, kind="space_id")
         credentials = base64.b64encode(f"{token}:".encode()).decode("ascii")
         self._client = httpx.AsyncClient(
             base_url=base_url or endpoints_for(region).profile_api,
@@ -148,16 +164,25 @@ class ProfileAPIClient:
         """Lowercase `value`. Profile API lookups are case-sensitive and
         the wrong case returns an empty result, not an error — silently
         "working" while returning nothing is worse than raising, so this
-        at least logs when normalization changed something."""
+        at least logs when normalization changed something.
+
+        Logs a digest of the normalized lookup key, never the raw value —
+        this fires on any non-lowercase input, which for an email address
+        is the common case, not the edge case, so logging the raw value
+        here at WARNING (a level that survives any log level a deployment
+        would plausibly set) would defeat the module docstring's own
+        stated purpose. Uses the same `{id_type}:{value}` digest formula
+        as the INFO-level lookup log below, so the two lines correlate.
+        """
         lowered = value.lower()
         if lowered != value:
+            digest = hashlib.sha256(f"{id_type}:{lowered}".encode()).hexdigest()[:16]
             logger.warning(
-                "Profile lookup id_type=%s value=%r was not lowercase; "
-                "normalized to %r before calling Segment (wrong case "
-                "returns an empty result, not an error).",
+                "Profile lookup id_type=%s key_sha256=%s was not "
+                "lowercase; normalized before calling Segment (wrong "
+                "case returns an empty result, not an error).",
                 id_type,
-                value,
-                lowered,
+                digest,
             )
         return lowered
 
@@ -171,7 +196,28 @@ class ProfileAPIClient:
         params: dict[str, Any] | None = None,
         requested_by: str = "unknown",
     ) -> dict[str, Any]:
+        # `collection` and `route` are typed as `Literal`s, which is a
+        # static-only guarantee and does nothing at runtime — both are
+        # interpolated directly into the request path below, so they get
+        # the same runtime check every other path-building value here
+        # does. `id_type` is an opaque identifier-type name (e.g. "email",
+        # "user_id") with the same opaque-alphanumeric shape as a Segment
+        # resource ID. `id_value` cannot use `validate_resource_id` as-is
+        # — a legitimate value is an email address, which contains `@`
+        # and `.` — so it gets a dedicated validator that refuses a path
+        # separator or dot-segment and percent-encodes the rest.
+        if collection not in _VALID_COLLECTIONS:
+            raise InvalidResourceIdError(
+                f"Refused: 'collection' must be one of {sorted(_VALID_COLLECTIONS)}. "
+                f"Got {collection!r}."
+            )
+        if route not in _VALID_ROUTES:
+            raise InvalidResourceIdError(
+                f"Refused: 'route' must be one of {sorted(_VALID_ROUTES)}. Got {route!r}."
+            )
+        id_type = validate_resource_id(id_type, kind="id_type")
         normalized_value = self._normalize_id(id_type, id_value)
+        encoded_value = validate_profile_lookup_value(normalized_value, kind="id_value")
         lookup_key = f"{id_type}:{normalized_value}"
         # Logged before the request is sent — a lookup is on record even
         # if the call itself then fails or times out. key_sha256 is a
@@ -191,7 +237,10 @@ class ProfileAPIClient:
             route,
             requested_by,
         )
-        path = f"/v1/spaces/{self._space_id}/collections/{collection}/profiles/{lookup_key}/{route}"
+        path_segment = f"{id_type}:{encoded_value}"
+        path = (
+            f"/v1/spaces/{self._space_id}/collections/{collection}/profiles/{path_segment}/{route}"
+        )
         response = await self._client.get(path, params=params)
 
         if response.status_code == 429:
@@ -209,8 +258,12 @@ class ProfileAPIClient:
                 status_code=401,
             )
         if response.status_code == 404:
+            # key_sha256, not the raw identifier — an exception message
+            # reaches logs and error trackers the same way a log line
+            # does, and a caller who needs the raw value already has it.
             raise SegmentProfileNotFoundError(
-                f"No profile found for {lookup_key!r} in collection {collection!r}. "
+                f"No profile found for id_type={id_type!r} "
+                f"key_sha256={key_digest!r} in collection {collection!r}. "
                 "If this key was recently case-mismatched, note that wrong "
                 "case also returns an empty/not-found result, not an error "
                 "— this client already lowercased it before asking.",

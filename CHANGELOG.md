@@ -7,6 +7,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **A second log line in `client/profile_api.py` printed the raw
+  identifier in plaintext (CLOSE-3, high severity — PII).** The
+  case-normalization warning logged both the raw and lowercased lookup
+  value at WARNING, a level that survives any log level a deployment
+  would plausibly set, and fired on any non-lowercase input — the common
+  case for an email address, not the edge case. This directly undermined
+  the module's own documented purpose (the INFO-level lookup log a few
+  lines below it was already correctly hashed). A second instance:
+  `SegmentProfileNotFoundError`'s 404 message embedded the raw lookup key
+  via `{lookup_key!r}`, and exception messages reach logs and error
+  trackers the same way a log line does. Both now log/embed
+  `id_type` and the same truncated SHA-256 digest the INFO-level lookup
+  log already used, never the raw value.
+  `tests/client/test_profile_api.py` captures at DEBUG (not just
+  WARNING) and asserts no emitted record, and no 404 exception's
+  `str()`, contains the raw identifier in any case variant.
+
+- **The Tier 1 client guard's `base_url.join()`-based resolution wasn't
+  actually the resolution httpx uses, and didn't decode percent-encoded
+  dot-segments (CLOSE-2, high severity, latent).** A second external
+  audit found `httpx.AsyncClient.request()` resolves a relative path with
+  its own `_merge_url`, not `URL.join()` — the two disagree on a leading
+  `//`, where `join()` models a different host while the real client
+  strips it and sends to the base host's root (harmless as reported, but
+  the guard's model of where the request was going was simply wrong).
+  Separately, neither resolver percent-decodes before comparing, so
+  `/%2e%2e/regulations` resolved to the literal path
+  `/%2e%2e/regulations`, not `/regulations` — whether Segment's own edge
+  decodes-then-normalizes before routing (common at CDN/gateway layers)
+  isn't verifiable from outside, so the guard now assumes the pessimistic
+  case. `_refuse_if_tier1_mutation` now refuses any `//`-prefixed path
+  outright (this client never legitimately constructs one), resolves
+  everything else with the client's own `build_request()` instead of a
+  parallel reimplementation, and percent-decodes to a fixed point plus
+  re-normalizes dot-segments/repeated-slashes before comparing.
+  `tests/test_tier1_unreachable.py` adds the percent-encoded-dot-segment
+  family to `TIER1_BYPASS_PATHS`, a test asserting the guard's resolved
+  URL equals what a real transport receives for every bypass path, and a
+  property test that generates bypass compositions instead of only
+  listing them. See ADR 0004's addendum.
+
+- **`client/profile_api.py` had the exact ENG-1 path-traversal bug,
+  unfixed, in a second file (CLOSE-1, high severity, latent).** Latent
+  only because `tools/profiles.py` is a docstring-only stub, so
+  `ProfileAPIClient` was unreachable from any registered tool — it would
+  have gone live, unaudited, the moment `lookup_profile` was implemented.
+  `ProfileAPIClient._get()` interpolated `space_id`, `collection`,
+  `route`, and an `{id_type}:{id_value}` lookup key directly into a
+  request path with none of them validated — confirmed live against a
+  recording transport, `id_value="../../../../regulations"` sent
+  `GET .../collections/regulations/traits` instead of a profile lookup.
+  `space_id` is now validated once at construction; `collection`/`route`
+  get a runtime membership check backing their `Literal` types (which are
+  static-only and do nothing at runtime); `id_type` is validated via
+  `validate_resource_id`; `id_value` gets a new dedicated validator,
+  `validate_profile_lookup_value` (`client/validation.py`), since a
+  legitimate value is an email address that `validate_resource_id`'s
+  bare-identifier pattern would wrongly refuse. See ADR 0003's
+  correction section.
+- **`check_delivery_health`'s `source_id` was the one Public API tool
+  argument left unvalidated (CLOSE-1 bonus, informational — not a
+  traversal vector).** It only ever reaches a query parameter, which
+  httpx percent-encodes, not a request path. Validated anyway via
+  `validate_resource_id` for consistency with every other resource ID
+  this server accepts as a tool argument.
+
 ## 0.1.2 - 2026-08-30
 
 ### Security

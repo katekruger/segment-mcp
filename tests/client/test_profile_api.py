@@ -144,6 +144,44 @@ async def test_lookup_log_never_contains_the_raw_identifier(
         assert "jane@example.com" not in record.message
 
 
+async def test_normalization_warning_never_contains_the_raw_or_normalized_value(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # CLOSE-3: the normalization warning used to log both the raw and
+    # lowercased value at WARNING — a level that survives any log level a
+    # deployment would plausibly set — and it fires on any non-lowercase
+    # input, which for an email address is the common case, not the edge
+    # case. Captures at DEBUG (not just WARNING) so this can't pass by
+    # accident because caplog happened to be scoped above the level that
+    # would have caught the leak.
+    async with make_client("us/profile/traits_200.json") as client:
+        with caplog.at_level(logging.DEBUG, logger="segment_mcp.profile_api"):
+            await client.get_traits("users", "email", "Jane.Doe@Example.com")
+
+    assert caplog.records, "expected at least the WARNING + INFO lookup log lines"
+    for record in caplog.records:
+        for leaked in ("Jane.Doe@Example.com", "jane.doe@example.com", "Jane.Doe", "Example.com"):
+            assert leaked not in record.message, f"{leaked!r} leaked in log: {record.message!r}"
+
+
+async def test_404_error_never_contains_the_raw_identifier(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # Second instance of the same defect: SegmentProfileNotFoundError's
+    # message embedded the raw lookup key via `{lookup_key!r}`, which
+    # reaches logs and error trackers the same way a log line does.
+    async with make_client("us/profile/not_found_404.json") as client:
+        with caplog.at_level(logging.DEBUG, logger="segment_mcp.profile_api"):
+            with pytest.raises(SegmentProfileNotFoundError) as exc_info:
+                await client.get_traits("users", "email", "Jane.Doe@Example.com")
+
+    exception_text = str(exc_info.value)
+    log_text = "\n".join(r.message for r in caplog.records)
+    for leaked in ("Jane.Doe@Example.com", "jane.doe@example.com", "Jane.Doe", "Example.com"):
+        assert leaked not in exception_text, f"{leaked!r} leaked in exception: {exception_text!r}"
+        assert leaked not in log_text, f"{leaked!r} leaked in logs: {log_text!r}"
+
+
 async def test_lookup_digest_is_stable_across_calls_for_the_same_identifier(
     caplog: pytest.LogCaptureFixture,
 ) -> None:

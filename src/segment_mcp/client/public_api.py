@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from typing import Any, cast
+from urllib.parse import unquote
 
 import httpx
 
@@ -140,25 +141,102 @@ class Tier1BlockedError(SegmentAPIError):
 # --------------------------------------------------------------------------
 
 
-def _refuse_if_tier1_mutation(method: str, path: str, *, base_url: httpx.URL) -> None:
+def _decode_fully(value: str, *, max_iterations: int = 10) -> str:
+    """Percent-decode `value` repeatedly until a pass changes nothing, so
+    a double-encoded segment (`%252e%252e`) doesn't survive a single
+    decode the way `httpx.URL.path` only ever does one pass of. Capped at
+    `max_iterations` as a defensive bound against a pathological input
+    that never converges — no real percent-encoding needs more than a
+    couple of passes."""
+    decoded = value
+    for _ in range(max_iterations):
+        next_decoded = unquote(decoded)
+        if next_decoded == decoded:
+            return decoded
+        decoded = next_decoded
+    return decoded
+
+
+def _normalize_path_segments(path: str) -> str:
+    """Collapse `.`/`..` segments and repeated `/` in an already-decoded
+    path, the way a permissive origin server commonly normalizes a
+    request target before routing it — RFC 3986's `remove_dot_segments`
+    doesn't decode percent-encoding (a `%2e%2e` segment isn't a dot
+    segment to it) or collapse repeated slashes, both of which real
+    infrastructure downstream of httpx routinely does. Deliberately
+    conservative: no legitimate Segment resource ID can contain a `/`
+    (see `client/validation.py`), so nothing legitimate depends on a
+    repeated slash or a literal `.`/`..` segment surviving this."""
+    is_absolute = path.startswith("/")
+    segments: list[str] = []
+    for segment in path.split("/"):
+        if segment in ("", "."):
+            continue
+        if segment == "..":
+            if segments:
+                segments.pop()
+            continue
+        segments.append(segment)
+    joined = "/".join(segments)
+    return f"/{joined}" if is_absolute else joined
+
+
+def _refuse_if_tier1_mutation(method: str, path: str, *, client: httpx.AsyncClient) -> None:
     """Raise before a single byte goes over the network if this is a
     mutating (non-GET) call anywhere under `/regulations`.
 
-    Matches on the URL httpx will actually resolve, not the raw string
-    passed in — an earlier version of this guard did a bare
-    `path.split("?", 1)[0]` string-prefix check, which missed a
-    `#fragment` it never stripped, a `.`/`..` path segment it never
-    normalized, a request path with no leading slash, an absolute URL
-    override, and case variation (`/REGULATIONS`). `base_url.join(path)`
-    resolves all of those the same way the underlying request will, which
-    is exactly why the check runs against it rather than reimplementing
-    URL resolution here. See
-    docs/decisions/0004-tier1-guard-matches-resolved-url.md.
+    Matches on the URL the transport will actually send, not the raw
+    string passed in or a parallel reimplementation of URL resolution —
+    a second external audit (30 Aug 2026) found two more ways a
+    `base_url.join(path)`-based check (the first bypass-closing rewrite)
+    still diverged from what `httpx.AsyncClient` really sends:
+
+    - `base_url.join()` implements RFC 3986 relative-reference
+      resolution, which `AsyncClient.request()` does *not* actually use
+      internally — `client.build_request(method, path).url` does, so
+      that's what this checks against instead. The two disagree on a
+      leading `//path`: `join()` treats it as a network-path reference to
+      a *different host* (`base.join("//regulations")` ->
+      `https://regulations`), while the real client strips the pseudo-
+      host and sends to the base host's root. A guard reasoning about the
+      wrong host is refused outright below rather than resolved, since
+      that divergence is the actual defect, independent of where this
+      particular string happens to land today.
+    - Neither `join()` nor `build_request()` percent-decodes the path
+      before comparing it — `/%2e%2e/regulations` resolves to the literal
+      path `/%2e%2e/regulations`, not `/regulations`, at the httpx layer.
+      Whether that reaches Segment's `/regulations` handler anyway
+      depends on whether Segment's edge decodes-then-normalizes before
+      routing, which is common at CDN/gateway layers and not something
+      this client can verify from outside. `_decode_fully` plus
+      `_normalize_path_segments` model that decode-then-normalize
+      pessimistically, so this guard blocks anything that *could* resolve
+      to `/regulations` downstream, not just what httpx already collapses
+      before sending.
+
+    See docs/decisions/0004-tier1-guard-matches-resolved-url.md.
     """
     if method.upper() == "GET":
         return
-    resolved = base_url.join(path)
-    normalized_path = resolved.path.rstrip("/").casefold()
+    if path.startswith("//"):
+        # A protocol-relative ("network-path") reference is never a path
+        # this client's own tool code constructs — every real call site
+        # builds a literal "/api-path" string. `build_request` currently
+        # routes this to the base host's root rather than the pseudo-host
+        # it names (verified: `client.build_request("POST", "//x").url`
+        # == the base URL), which happens to be safe today, but that's an
+        # httpx implementation detail this guard should not depend on for
+        # safety — refuse outright rather than resolve and reason about
+        # it.
+        raise Tier1BlockedError(
+            f"Refused: {method.upper()} {path!r} is a protocol-relative "
+            "path, which this client never legitimately constructs, and "
+            "is refused defensively rather than resolved.",
+            status_code=None,
+        )
+    resolved_path = client.build_request(method, path).url.path
+    decoded_path = _decode_fully(resolved_path)
+    normalized_path = _normalize_path_segments(decoded_path).rstrip("/").casefold()
     blocked_prefix = _TIER1_BLOCKED_PATH_PREFIX.casefold()
     if normalized_path == blocked_prefix or normalized_path.startswith(blocked_prefix + "/"):
         raise Tier1BlockedError(
@@ -391,7 +469,7 @@ class SegmentPublicAPIClient:
         params: dict[str, Any] | None = None,
         json_body: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        _refuse_if_tier1_mutation(method, path, base_url=self._client.base_url)
+        _refuse_if_tier1_mutation(method, path, client=self._client)
         await self._limiter.wait_if_needed(method, path)
         response = await self._client.request(method, path, params=params, json=json_body)
 

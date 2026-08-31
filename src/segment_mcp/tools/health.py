@@ -264,9 +264,13 @@ async def check_delivery_health(
     """Is this destination silently failing? `GET /destinations/{id}/delivery-metrics`,
     with the requested window validated against the real per-granularity
     caps rather than assumed to fit."""
-    # Validated before any client call — destination_id is interpolated
-    # directly into both requests below.
+    # Validated before any client call. destination_id is interpolated
+    # directly into both requests below; source_id only ever reaches a
+    # query parameter (httpx percent-encodes those), not a path, so this
+    # isn't a traversal vector — it's validated anyway for consistency
+    # with every other resource ID this server accepts as a tool argument.
     destination_id = validate_resource_id(destination_id, kind="destination_id")
+    source_id = validate_resource_id(source_id, kind="source_id")
     now = utc_now()
     effective_start, effective_end, capped, cap_note = _resolve_window(
         granularity, start_time, end_time, now=now

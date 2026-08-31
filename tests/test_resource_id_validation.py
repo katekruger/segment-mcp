@@ -111,3 +111,14 @@ async def test_check_delivery_health_refuses_traversal_destination_id(traversal:
     async with client:
         with pytest.raises(InvalidResourceIdError):
             await check_delivery_health(client, destination_id=traversal, source_id="src_1")
+
+
+@pytest.mark.parametrize("traversal", TRAVERSAL_INPUTS)
+async def test_check_delivery_health_refuses_traversal_source_id(traversal: str) -> None:
+    # source_id only ever reaches a query parameter, not a path — not a
+    # traversal vector — but it's validated for consistency with every
+    # other resource ID this server accepts. See ADR 0003.
+    client = SegmentPublicAPIClient("tok", Region.US, transport=_no_call_transport())
+    async with client:
+        with pytest.raises(InvalidResourceIdError):
+            await check_delivery_health(client, destination_id="dst_1", source_id=traversal)

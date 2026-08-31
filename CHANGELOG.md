@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **`client/profile_api.py` had the exact ENG-1 path-traversal bug,
+  unfixed, in a second file (CLOSE-1, high severity, latent).** Latent
+  only because `tools/profiles.py` is a docstring-only stub, so
+  `ProfileAPIClient` was unreachable from any registered tool — it would
+  have gone live, unaudited, the moment `lookup_profile` was implemented.
+  `ProfileAPIClient._get()` interpolated `space_id`, `collection`,
+  `route`, and an `{id_type}:{id_value}` lookup key directly into a
+  request path with none of them validated — confirmed live against a
+  recording transport, `id_value="../../../../regulations"` sent
+  `GET .../collections/regulations/traits` instead of a profile lookup.
+  `space_id` is now validated once at construction; `collection`/`route`
+  get a runtime membership check backing their `Literal` types (which are
+  static-only and do nothing at runtime); `id_type` is validated via
+  `validate_resource_id`; `id_value` gets a new dedicated validator,
+  `validate_profile_lookup_value` (`client/validation.py`), since a
+  legitimate value is an email address that `validate_resource_id`'s
+  bare-identifier pattern would wrongly refuse. See ADR 0003's
+  correction section.
+- **`check_delivery_health`'s `source_id` was the one Public API tool
+  argument left unvalidated (CLOSE-1 bonus, informational — not a
+  traversal vector).** It only ever reaches a query parameter, which
+  httpx percent-encodes, not a request path. Validated anyway via
+  `validate_resource_id` for consistency with every other resource ID
+  this server accepts as a tool argument.
+
 ## 0.1.2 - 2026-08-30
 
 ### Security

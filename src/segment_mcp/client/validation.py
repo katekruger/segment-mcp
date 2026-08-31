@@ -18,6 +18,7 @@ for why this refuses rather than percent-encodes.
 from __future__ import annotations
 
 import re
+from urllib.parse import quote
 
 from segment_mcp.client.public_api import SegmentAPIError
 
@@ -57,3 +58,44 @@ def validate_resource_id(value: str, *, kind: str) -> str:
             f"(alphanumeric, underscore, hyphen; 1-64 chars). Got {value!r}."
         )
     return value
+
+
+# Profile API lookup values (`client/profile_api.py`) are a different shape
+# than a bare resource ID: a legitimate value is an email address — `@`,
+# `.`, and unicode local parts are all normal — which `validate_resource_id`
+# would wrongly refuse. The property that actually matters for a value
+# headed into a single `{id_type}:{value}` path segment is that it cannot
+# introduce a *new* path segment or a query/fragment delimiter: no `/`,
+# `\`, `?`, `#`, and no `..` sequence (which some servers treat as a
+# dot-segment regardless of surrounding characters).
+_PROFILE_ID_VALUE_UNSAFE_RE = re.compile(r"[/\\?#]")
+
+# Everything in this set is a valid, unencoded RFC 3986 path-segment
+# character (unreserved + sub-delims + ":" + "@"), so a real email address
+# round-trips through `quote()` unchanged. Anything else (whitespace,
+# unicode) gets percent-encoded rather than rejected.
+_PROFILE_ID_VALUE_SAFE_CHARS = "!$&'()*+,;=:@-._~"
+
+
+def validate_profile_lookup_value(value: str, *, kind: str) -> str:
+    """Reject a Profile API lookup value that could escape its own path
+    segment, then percent-encode what remains for safe interpolation into
+    `f"/v1/spaces/{space_id}/collections/{collection}/profiles/{id_type}:{value}/{route}"`.
+
+    Refuses rather than encodes a `/`, `\\`, `?`, `#`, or `..` — there is no
+    legitimate lookup value that needs one of those, and encoding one would
+    just hide a traversal attempt behind a confusing literal path segment
+    (the same reasoning as `validate_resource_id`). Everything else is
+    percent-encoded, not rejected, because a legitimate value here commonly
+    contains characters (`@`, `+`, non-ASCII) that `validate_resource_id`'s
+    bare-identifier pattern would refuse outright.
+    """
+    if not value:
+        raise InvalidResourceIdError(f"Refused: {kind!r} must not be empty.")
+    if _PROFILE_ID_VALUE_UNSAFE_RE.search(value) or ".." in value:
+        raise InvalidResourceIdError(
+            f"Refused: {kind!r} contains a path separator, a query/fragment "
+            f"delimiter, or a '..' sequence, and cannot be used as a Profile "
+            f"API lookup value. Got {value!r}."
+        )
+    return quote(value, safe=_PROFILE_ID_VALUE_SAFE_CHARS)

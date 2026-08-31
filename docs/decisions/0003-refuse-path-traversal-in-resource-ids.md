@@ -95,6 +95,56 @@ ever called — the only way to actually prove the refusal happened before
 the network, not just that a raised error's mock transport was never
 awaited.
 
+`tests/client/test_profile_api_validation.py` covers the same property for
+`client/profile_api.py`'s five path-building values (added in the CLOSE-1
+follow-up below).
+
+### Correction: the call sites were not actually enumerated the first time
+
+This ADR originally claimed the call sites were "enumerable" and, by
+implication, enumerated. They weren't: `client/profile_api.py`'s
+`ProfileAPIClient._get()` interpolates **four** caller-controlled values
+(`space_id`, `collection`, `route`, and an `{id_type}:{id_value}` lookup
+key built from two more) directly into a request path, unvalidated, and
+this ADR's original "Decision Outcome" and "Confirmation" sections didn't
+mention it. It was missed the first time because `tools/profiles.py` was
+(and, as of this correction, still is) a docstring-only stub — `lookup_profile`
+isn't implemented yet, so `ProfileAPIClient` was unreachable from any
+registered tool and a call-site grep for "what's reachable from a tool"
+skipped it. A second external audit (30 Aug 2026) found the same class of
+bug there, live against a recording transport, and it is fixed as of that
+audit alongside this correction:
+
+- `space_id` is now validated once, at `ProfileAPIClient.__init__`, via
+  `validate_resource_id` — so a bad space ID fails at construction, not on
+  every subsequent lookup.
+- `collection` and `route` are `Literal` types (`Collection`, `ProfileRoute`)
+  — a static-only guarantee — and now also get a runtime membership check
+  against the same two closed sets, since nothing stops a caller that
+  bypasses the type checker from reaching `_get` with an out-of-set value.
+- `id_type` is validated via `validate_resource_id` — it's an opaque
+  identifier-type name (`"email"`, `"user_id"`) with the same shape as a
+  bare Segment resource ID.
+- `id_value` **cannot** use `validate_resource_id` as-is: a legitimate
+  value is an email address, and `validate_resource_id`'s bare-identifier
+  pattern would refuse the `@` and `.` in one. `validate_profile_lookup_value`
+  (`client/validation.py`) is a separate validator for exactly this shape:
+  refuse a value containing `/`, `\`, `?`, `#`, or a `..` sequence (the
+  property that actually matters — it cannot introduce a new path segment
+  or a query/fragment delimiter), then percent-encode what remains. An
+  email is a legitimate path segment once encoded; `../regulations` is
+  not an email.
+
+The corrected claim: call sites that interpolate a validated ID into a
+Public API request path are enumerable *and are now actually enumerated*
+— `client/public_api.py`'s tool-facing call sites (`tools/routing.py`,
+`tools/governance.py`, `tools/health.py`) and `client/profile_api.py`'s
+five path-building values, all listed in the Confirmation sections above
+and below. This correction doesn't change the "Known limitation" already
+stated below — a future call site still has to opt in by construction, not
+by a structural guarantee — it just retracts the implication that the
+enumeration had already been done.
+
 ## Assumption this relies on
 
 That every legitimate Segment resource ID matches

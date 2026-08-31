@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **A second log line in `client/profile_api.py` printed the raw
+  identifier in plaintext (CLOSE-3, high severity — PII).** The
+  case-normalization warning logged both the raw and lowercased lookup
+  value at WARNING, a level that survives any log level a deployment
+  would plausibly set, and fired on any non-lowercase input — the common
+  case for an email address, not the edge case. This directly undermined
+  the module's own documented purpose (the INFO-level lookup log a few
+  lines below it was already correctly hashed). A second instance:
+  `SegmentProfileNotFoundError`'s 404 message embedded the raw lookup key
+  via `{lookup_key!r}`, and exception messages reach logs and error
+  trackers the same way a log line does. Both now log/embed
+  `id_type` and the same truncated SHA-256 digest the INFO-level lookup
+  log already used, never the raw value.
+  `tests/client/test_profile_api.py` captures at DEBUG (not just
+  WARNING) and asserts no emitted record, and no 404 exception's
+  `str()`, contains the raw identifier in any case variant.
+
 - **The Tier 1 client guard's `base_url.join()`-based resolution wasn't
   actually the resolution httpx uses, and didn't decode percent-encoded
   dot-segments (CLOSE-2, high severity, latent).** A second external

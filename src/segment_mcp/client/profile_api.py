@@ -164,16 +164,25 @@ class ProfileAPIClient:
         """Lowercase `value`. Profile API lookups are case-sensitive and
         the wrong case returns an empty result, not an error — silently
         "working" while returning nothing is worse than raising, so this
-        at least logs when normalization changed something."""
+        at least logs when normalization changed something.
+
+        Logs a digest of the normalized lookup key, never the raw value —
+        this fires on any non-lowercase input, which for an email address
+        is the common case, not the edge case, so logging the raw value
+        here at WARNING (a level that survives any log level a deployment
+        would plausibly set) would defeat the module docstring's own
+        stated purpose. Uses the same `{id_type}:{value}` digest formula
+        as the INFO-level lookup log below, so the two lines correlate.
+        """
         lowered = value.lower()
         if lowered != value:
+            digest = hashlib.sha256(f"{id_type}:{lowered}".encode()).hexdigest()[:16]
             logger.warning(
-                "Profile lookup id_type=%s value=%r was not lowercase; "
-                "normalized to %r before calling Segment (wrong case "
-                "returns an empty result, not an error).",
+                "Profile lookup id_type=%s key_sha256=%s was not "
+                "lowercase; normalized before calling Segment (wrong "
+                "case returns an empty result, not an error).",
                 id_type,
-                value,
-                lowered,
+                digest,
             )
         return lowered
 
@@ -249,8 +258,12 @@ class ProfileAPIClient:
                 status_code=401,
             )
         if response.status_code == 404:
+            # key_sha256, not the raw identifier — an exception message
+            # reaches logs and error trackers the same way a log line
+            # does, and a caller who needs the raw value already has it.
             raise SegmentProfileNotFoundError(
-                f"No profile found for {lookup_key!r} in collection {collection!r}. "
+                f"No profile found for id_type={id_type!r} "
+                f"key_sha256={key_digest!r} in collection {collection!r}. "
                 "If this key was recently case-mismatched, note that wrong "
                 "case also returns an empty/not-found result, not an error "
                 "— this client already lowercased it before asking.",

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`v0.1.2` was tagged and pushed two commits before the security
+  remediation commit landed, and `server.json` still said `"0.1.1"` in
+  both places while the package version had already moved to `0.1.2`
+  (CLOSE3-3).** The tagged release therefore didn't contain the
+  traversal fix, and the version mismatch is very likely why
+  `registry.modelcontextprotocol.io/v0/servers?search=katekruger`
+  returned nothing. `server.json`'s `version` and `packages[0].version`
+  are bumped to `0.1.3` to match `src/segment_mcp/__init__.py`, and a new
+  `version-consistency` job in `ci.yml` (backed by
+  `tests/test_server_json.py`) now fails CI whenever they disagree, so
+  this can't drift unnoticed again before the next tag.
+
 ### Security
 
 - **The Tier 1 client guard's decode-then-normalize model missed a

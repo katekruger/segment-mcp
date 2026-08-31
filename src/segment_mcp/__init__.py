@@ -5,4 +5,4 @@ which are governed by nothing. Read-only by default; regulation/deletion
 creation is not exposed in any mode. See BUILD-PLAN.md for the design.
 """
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"

@@ -10,6 +10,51 @@ permissions:
   contents: read
 
 jobs:
+  # `server.json`'s version fields are also checked, independently, by
+  # `tests/test_server_json.py` (run as part of `check` below) — this job
+  # is redundant with that on purpose, the same "belt and braces" reasoning
+  # as the Tier 1 guard: `release.yml`'s `publish-mcp-registry` job
+  # re-stamps server.json's version at release time, so a stale checked-in
+  # value doesn't break that one publish run, which is exactly why v0.1.2
+  # got tagged and pushed with server.json still saying 0.1.1 (CLOSE3-3)
+  # without CI ever objecting. A version mismatch is invisible until
+  # publication and expensive after, so it's caught here on every push and
+  # PR, not only via a test someone has to remember to run locally.
+  version-consistency:
+    name: server.json version matches package version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          enable-cache: false
+
+      - name: Verify server.json's version fields match the package version
+        run: |
+          pkg_version="$(uvx hatch version)"
+          top_level_version="$(jq -r '.version' server.json)"
+          package_entry_version="$(jq -r '.packages[0].version' server.json)"
+          failed=0
+          if [ "$top_level_version" != "$pkg_version" ]; then
+            echo "::error file=server.json::top-level version ($top_level_version)" \
+                 "does not match package version ($pkg_version, from" \
+                 "src/segment_mcp/__init__.py)"
+            failed=1
+          fi
+          if [ "$package_entry_version" != "$pkg_version" ]; then
+            echo "::error file=server.json::packages[0].version" \
+                 "($package_entry_version) does not match package version" \
+                 "($pkg_version, from src/segment_mcp/__init__.py)"
+            failed=1
+          fi
+          if [ "$failed" -ne 0 ]; then
+            exit 1
+          fi
+          echo "OK: server.json's version fields match package version $pkg_version"
+
   # A real Python version matrix. This was a single job while the repo was
   # private, since Actions minutes are metered there; the repo is public
   # now, so there's real value in catching a version-specific regression

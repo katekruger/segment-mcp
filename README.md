@@ -157,6 +157,14 @@ uv run ruff check . && uv run ruff format --check . && uv run pyright && uv run 
 
 See `CONTRIBUTING.md` and `AGENTS.md`.
 
+## See also
+
+Every project here shares one idea: a GTM system should refuse to act on data it cannot verify.
+
+[campaign-preflight](https://github.com/katekruger/campaign-preflight) — the same refusal to coerce missing evidence into a pass. `insufficient_data` is its own state in both.
+
+[pipeline-waterfall](https://github.com/katekruger/pipeline-waterfall) — downstream of this. Reconciles the bookings and pipeline waterfall, and fails the build rather than reporting a bridge that does not tie out.
+
 ## License
 
 MIT — see `LICENSE`.
